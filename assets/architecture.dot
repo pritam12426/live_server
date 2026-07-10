@@ -1,0 +1,121 @@
+digraph architecture {
+    rankdir=TB;
+    bgcolor="#1a1a1a";
+    fontcolor="#dddddd";
+    fontname="Helvetica";
+    label="live-server — Module Architecture";
+    labeljust=l;
+    fontsize=18;
+    pad=0.5;
+    nodesep=0.4;
+    ranksep=0.6;
+
+    node [fontname="Helvetica" fontsize=11 shape=box style="filled,rounded" fillcolor="#2d2d2d" color="#444444" fontcolor="#dddddd" width=0];
+    edge [color="#555555" fontcolor="#999999" fontname="Helvetica" fontsize=9];
+
+    // ── Clusters ──────────────────────────────────────────────
+
+    subgraph cluster_entry {
+        label="Entry & Config";
+        style="filled,dashed";
+        color="#444444";
+        fillcolor="#222222";
+        fontcolor="#aaaaaa";
+        fontsize=12;
+        main [label="main.c\nargp CLI parser" fillcolor="#1e3a5f" fontcolor="#ffffff"];
+        project_config [label="project_config.h\nVersion, name, URL" fillcolor="#2d2d2d"];
+        types [label="types.h\nLivereloadMode" fillcolor="#2d2d2d"];
+    }
+
+    subgraph cluster_core {
+        label="Server Core";
+        style="filled,dashed";
+        color="#444444";
+        fillcolor="#222222";
+        fontcolor="#aaaaaa";
+        fontsize=12;
+        server [label="server.c\nAccept loop, signal handling\nthread dispatch" fillcolor="#5a3e1a" fontcolor="#ffffff"];
+        transport [label="transport.c\nOpaque socket I/O\npartial write handling" fillcolor="#3d2b1a" fontcolor="#ffffff"];
+        thread_pool [label="thread_pool.c\nFixed-size pool\ncircular work queue" fillcolor="#3d2b1a" fontcolor="#ffffff"];
+        ratelimit [label="ratelimit.c\nPer-IP rate limiter\nhash table" fillcolor="#3d2b1a" fontcolor="#ffffff"];
+    }
+
+    subgraph cluster_http {
+        label="HTTP Protocol";
+        style="filled,dashed";
+        color="#444444";
+        fillcolor="#222222";
+        fontcolor="#aaaaaa";
+        fontsize=12;
+        http [label="http.c\nRequest parser\nURL decode, header parse" fillcolor="#1a4a3a" fontcolor="#ffffff"];
+        response [label="response.c\nResponse builder\nerror pages, redirects" fillcolor="#1a4a3a" fontcolor="#ffffff"];
+        mime [label="mime.c\nMIME type lookup\nextension table" fillcolor="#1a4a3a" fontcolor="#ffffff"];
+        auth [label="auth.c\nBasic Auth\nBase64 decode" fillcolor="#1a4a3a" fontcolor="#ffffff"];
+    }
+
+    subgraph cluster_file {
+        label="File Serving";
+        style="filled,dashed";
+        color="#444444";
+        fillcolor="#222222";
+        fontcolor="#aaaaaa";
+        fontsize=12;
+        file [label="file.c\nFile serving, range requests\nsafe_path, ETag, LR inject" fillcolor="#4a1a3a" fontcolor="#ffffff"];
+    }
+
+    subgraph cluster_livereload {
+        label="Live Reload";
+        style="filled,dashed";
+        color="#444444";
+        fillcolor="#222222";
+        fontcolor="#aaaaaa";
+        fontsize=12;
+        livereload [label="livereload.c\nSSE connections\nbroadcast, heartbeats" fillcolor="#2a4a3a" fontcolor="#ffffff"];
+        watcher [label="watcher.c\ninotify (Linux) / poll\nrecursive directory watch" fillcolor="#2a4a3a" fontcolor="#ffffff"];
+    }
+
+    subgraph cluster_log {
+        label="Diagnostics";
+        style="filled,dashed";
+        color="#444444";
+        fillcolor="#222222";
+        fontcolor="#aaaaaa";
+        fontsize=12;
+        log [label="log.c\nThread-safe logger\ncolours, timestamps" fillcolor="#3a3a1a" fontcolor="#ffffff"];
+    }
+
+    // ── Edges ─────────────────────────────────────────────────
+
+    main -> server [label="ServerConfig"];
+    main -> log [label="log_init()"];
+    main -> project_config [style=dashed arrowhead=none];
+    main -> types [style=dashed arrowhead=none];
+
+    server -> transport [label="Transport*"];
+    server -> thread_pool [label="submit tasks"];
+    server -> ratelimit [label="check/leave"];
+    server -> http [label="parse request"];
+    server -> auth [label="check creds"];
+    server -> livereload [label="start/stop"];
+    server -> file [label="dispatch serve"];
+
+    http -> transport [label="read raw headers"];
+    response -> transport [label="write response"];
+    file -> response [label="send_file()"];
+    file -> mime [label="mime_from_path()"];
+    file -> http [label="read HttpRequest" style=dashed];
+
+    livereload -> watcher [label="create / start"];
+    livereload -> transport [label="SSE write"];
+    livereload -> response [style=dashed arrowhead=none];
+
+    log -> server [style=dashed dir=back constraint=false];
+    log -> file [style=dashed dir=back constraint=false];
+    log -> http [style=dashed dir=back constraint=false];
+    log -> transport [style=dashed dir=back constraint=false];
+    log -> thread_pool [style=dashed dir=back constraint=false];
+    log -> livereload [style=dashed dir=back constraint=false];
+    log -> ratelimit [style=dashed dir=back constraint=false];
+    log -> auth [style=dashed dir=back constraint=false];
+    log -> mime [style=dashed dir=back constraint=false];
+}

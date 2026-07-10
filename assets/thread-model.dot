@@ -1,0 +1,133 @@
+digraph thread_model {
+    rankdir=LR;
+    bgcolor="#1a1a1a";
+    fontcolor="#dddddd";
+    fontname="Helvetica";
+    label="Thread Model";
+    labeljust=l;
+    fontsize=18;
+    pad=0.5;
+    nodesep=0.5;
+    ranksep=0.8;
+
+    node [fontname="Helvetica" fontsize=10 shape=box style="filled,rounded" color="#444444" fontcolor="#dddddd"];
+    edge [color="#555555" fontcolor="#999999" fontname="Helvetica" fontsize=9];
+
+    // ── Main Thread ───────────────────────────────────────────
+
+    subgraph cluster_main {
+        label="Main Thread (process)";
+        style="filled,dashed";
+        color="#444444";
+        fillcolor="#1a1a1a";
+        fontcolor="#ffcc66";
+        fontsize=11;
+
+        main_thread [label=<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4" BGCOLOR="#2d2d2d">
+            <TR><TD BGCOLOR="#5a3e1a"><FONT COLOR="#ffffff"><B>Main Thread</B></FONT></TD></TR>
+            <TR><TD ALIGN="LEFT">parse CLI args (argp)</TD></TR>
+            <TR><TD ALIGN="LEFT">log_init()</TD></TR>
+            <TR><TD ALIGN="LEFT">make_listener()</TD></TR>
+            <TR><TD ALIGN="LEFT">livereload_start()</TD></TR>
+            <TR><TD ALIGN="LEFT">thread_pool_create()</TD></TR>
+            <TR><TD ALIGN="LEFT">accept() loop</TD></TR>
+            <TR><TD ALIGN="LEFT">submit ClientJob to pool</TD></TR>
+        </TABLE>> shape=plain];
+    }
+
+    // ── Thread Pool ───────────────────────────────────────────
+
+    subgraph cluster_pool {
+        label="Thread Pool (configurable, default 4)";
+        style="filled,dashed";
+        color="#444444";
+        fillcolor="#1a1a1a";
+        fontcolor="#ffcc66";
+        fontsize=11;
+
+        worker1 [label=<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="3" BGCOLOR="#2d2d2d">
+            <TR><TD BGCOLOR="#3d2b1a"><FONT COLOR="#ffffff"><B>Worker 1</B></FONT></TD></TR>
+            <TR><TD ALIGN="LEFT">pull task from queue</TD></TR>
+            <TR><TD ALIGN="LEFT">handle_client()</TD></TR>
+            <TR><TD ALIGN="LEFT">keep-alive loop</TD></TR>
+        </TABLE>> shape=plain];
+
+        worker2 [label=<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="3" BGCOLOR="#2d2d2d">
+            <TR><TD BGCOLOR="#3d2b1a"><FONT COLOR="#ffffff"><B>Worker 2</B></FONT></TD></TR>
+            <TR><TD ALIGN="LEFT">pull task from queue</TD></TR>
+            <TR><TD ALIGN="LEFT">handle_client()</TD></TR>
+            <TR><TD ALIGN="LEFT">keep-alive loop</TD></TR>
+        </TABLE>> shape=plain];
+
+        worker_dots [label="..." fillcolor="#2d2d2d" shape=plain fontsize=14];
+
+        workerN [label=<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="3" BGCOLOR="#2d2d2d">
+            <TR><TD BGCOLOR="#3d2b1a"><FONT COLOR="#ffffff"><B>Worker N</B></FONT></TD></TR>
+            <TR><TD ALIGN="LEFT">pull task from queue</TD></TR>
+            <TR><TD ALIGN="LEFT">handle_client()</TD></TR>
+            <TR><TD ALIGN="LEFT">keep-alive loop</TD></TR>
+        </TABLE>> shape=plain];
+
+        shared_queue [label=<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4" BGCOLOR="#1e3a5f">
+            <TR><TD BGCOLOR="#1e3a5f"><FONT COLOR="#ffffff"><B>Work Queue</B></FONT></TD></TR>
+            <TR><TD ALIGN="LEFT">circular buffer (4096 slots)</TD></TR>
+            <TR><TD ALIGN="LEFT">mutex + 2 condvars</TD></TR>
+            <TR><TD ALIGN="LEFT">queued: ClientJob*</TD></TR>
+        </TABLE>> shape=plain];
+    }
+
+    // ── Dedicated Threads ─────────────────────────────────────
+
+    subgraph cluster_dedicated {
+        label="Dedicated Threads";
+        style="filled,dashed";
+        color="#444444";
+        fillcolor="#1a1a1a";
+        fontcolor="#ffcc66";
+        fontsize=11;
+
+        watcher_thread [label=<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="3" BGCOLOR="#2d2d2d">
+            <TR><TD BGCOLOR="#2a4a3a"><FONT COLOR="#ffffff"><B>Watcher Thread</B></FONT></TD></TR>
+            <TR><TD ALIGN="LEFT">inotify or poll</TD></TR>
+            <TR><TD ALIGN="LEFT">select() on events</TD></TR>
+            <TR><TD ALIGN="LEFT">calls on_change()</TD></TR>
+        </TABLE>> shape=plain];
+
+        sse1 [label=<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="3" BGCOLOR="#2d2d2d">
+            <TR><TD BGCOLOR="#2a4a3a"><FONT COLOR="#ffffff"><B>SSE Client A</B></FONT></TD></TR>
+            <TR><TD ALIGN="LEFT">dedicated pthread</TD></TR>
+            <TR><TD ALIGN="LEFT">heartbeat every 15s</TD></TR>
+            <TR><TD ALIGN="LEFT">reads no data</TD></TR>
+        </TABLE>> shape=plain];
+
+        sse2 [label=<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="3" BGCOLOR="#2d2d2d">
+            <TR><TD BGCOLOR="#2a4a3a"><FONT COLOR="#ffffff"><B>SSE Client B</B></FONT></TD></TR>
+            <TR><TD ALIGN="LEFT">dedicated pthread</TD></TR>
+            <TR><TD ALIGN="LEFT">heartbeat every 15s</TD></TR>
+            <TR><TD ALIGN="LEFT">reads no data</TD></TR>
+        </TABLE>> shape=plain];
+    }
+
+    // ── Edges ─────────────────────────────────────────────────
+
+    main_thread -> shared_queue [label="submit()" color="#88cc88"];
+    main_thread -> watcher_thread [label="watcher_start()" color="#88cc88" style=dashed];
+    shared_queue -> worker1 [label="dequeue" dir=both color="#88cc88"];
+    shared_queue -> worker2 [label="dequeue" dir=both color="#88cc88"];
+    shared_queue -> workerN [label="dequeue" dir=both color="#88cc88"];
+
+    worker1 -> sse1 [label="SSE client detected\npthread_create()+detach" color="#8888cc" style=dashed];
+    worker2 -> sse2 [label="SSE client detected\npthread_create()+detach" color="#8888cc" style=dashed];
+
+    // ── Annotations ───────────────────────────────────────────
+
+    note [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="4" CELLPADDING="6">
+        <TR><TD><FONT COLOR="#ffcc66"><B>Key Properties</B></FONT></TD></TR>
+        <TR><TD ALIGN="LEFT">1. Accept never blocks workers</TD></TR>
+        <TR><TD ALIGN="LEFT">2. Each SSE client = 1 pthread</TD></TR>
+        <TR><TD ALIGN="LEFT">3. SSE threads are detached</TD></TR>
+        <TR><TD ALIGN="LEFT">4. Watcher is 1 thread total</TD></TR>
+        <TR><TD ALIGN="LEFT">5. Queue full → accept() blocks (!)</TD></TR>
+        <TR><TD ALIGN="LEFT">6. g_shutdown atomic kills all loops</TD></TR>
+    </TABLE>> shape=plain fillcolor="none"];
+}

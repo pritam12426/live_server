@@ -1,0 +1,29 @@
+[
+	{
+		"label": "Debug native binary",
+		"build": {
+			"command": "make",
+			"args": [
+				"debug",
+				"-B",
+				"O_DEBUG=1"
+			],
+			"cwd": "$ZED_WORKTREE_ROOT",
+			"shell": {
+				"with_arguments": {
+					"program": "/bin/sh",
+					"args": []
+				}
+			}
+		},
+		"program": "$ZED_WORKTREE_ROOT/live-server",
+		"args": [
+			"--log-level",
+			"debug",
+			"-I",
+			"temp"
+		],
+		"request": "launch",
+		"adapter": "CodeLLDB"
+	}
+]
