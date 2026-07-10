@@ -1,121 +1,134 @@
 digraph architecture {
-    rankdir=TB;
-    bgcolor="#1a1a1a";
-    fontcolor="#dddddd";
-    fontname="Helvetica";
-    label="live-server — Module Architecture";
-    labeljust=l;
-    fontsize=18;
-    pad=0.5;
-    nodesep=0.4;
-    ranksep=0.6;
+	rankdir=TB;
+	bgcolor="#fcfcfb";
+	fontcolor="#1a1a1a";
+	fontname="Helvetica";
+	label="live-server — Module Architecture";
+	labeljust=l;
+	fontsize=18;
+	pad=0.4;
+	nodesep=0.4;
+	ranksep=0.6;
 
-    node [fontname="Helvetica" fontsize=11 shape=box style="filled,rounded" fillcolor="#2d2d2d" color="#444444" fontcolor="#dddddd" width=0];
-    edge [color="#555555" fontcolor="#999999" fontname="Helvetica" fontsize=9];
+	node [fontname="Helvetica" fontsize=11 shape=box style="filled,rounded" fillcolor="#ffffff" color="#d8d7d2" fontcolor="#3a3a38" width=0 penwidth=1];
+	edge [color="#9c9b95" fontcolor="#6b6a66" fontname="Helvetica" fontsize=9 arrowsize=0.7 penwidth=1];
 
-    // ── Clusters ──────────────────────────────────────────────
+	// ── Clusters ──────────────────────────────────────────────
 
-    subgraph cluster_entry {
-        label="Entry & Config";
-        style="filled,dashed";
-        color="#444444";
-        fillcolor="#222222";
-        fontcolor="#aaaaaa";
-        fontsize=12;
-        main [label="main.c\nargp CLI parser" fillcolor="#1e3a5f" fontcolor="#ffffff"];
-        project_config [label="project_config.h\nVersion, name, URL" fillcolor="#2d2d2d"];
-        types [label="types.h\nLivereloadMode" fillcolor="#2d2d2d"];
-    }
+	subgraph cluster_entry {
+		label="Entry & Config";
+		style="filled,dashed";
+		color="#dedcd6";
+		fillcolor="#f6f5f2";
+		fontcolor="#8a8983";
+		fontsize=12;
+		main [label="main.c\nargp CLI parser" fillcolor="#e8f0fc" color="#1e50a2" fontcolor="#1e50a2"];
+		project_config [label="project_config.h\nVersion, name, URL" fillcolor="#ffffff" color="#d8d7d2" fontcolor="#6b6a66"];
+		types [label="types.h\nLivereloadMode" fillcolor="#ffffff" color="#d8d7d2" fontcolor="#6b6a66"];
+	}
 
-    subgraph cluster_core {
-        label="Server Core";
-        style="filled,dashed";
-        color="#444444";
-        fillcolor="#222222";
-        fontcolor="#aaaaaa";
-        fontsize=12;
-        server [label="server.c\nAccept loop, signal handling\nthread dispatch" fillcolor="#5a3e1a" fontcolor="#ffffff"];
-        transport [label="transport.c\nOpaque socket I/O\npartial write handling" fillcolor="#3d2b1a" fontcolor="#ffffff"];
-        thread_pool [label="thread_pool.c\nFixed-size pool\ncircular work queue" fillcolor="#3d2b1a" fontcolor="#ffffff"];
-        ratelimit [label="ratelimit.c\nPer-IP rate limiter\nhash table" fillcolor="#3d2b1a" fontcolor="#ffffff"];
-    }
+	subgraph cluster_core {
+		label="Server Core";
+		style="filled,dashed";
+		color="#dedcd6";
+		fillcolor="#f6f5f2";
+		fontcolor="#8a8983";
+		fontsize=12;
+		server [label="server.c\nAccept loop, signal handling\nthread dispatch" fillcolor="#faeeda" color="#854f0b" fontcolor="#854f0b"];
+		transport [label="transport.c\nOpaque socket I/O\npartial write, writev()" fillcolor="#faeeda" color="#854f0b" fontcolor="#854f0b"];
+		thread_pool [label="thread_pool.c\nFixed-size pool\ncircular work queue" fillcolor="#faeeda" color="#854f0b" fontcolor="#854f0b"];
+		ratelimit [label="ratelimit.c\nPer-IP rate limiter\ndynamic hash table" fillcolor="#faeeda" color="#854f0b" fontcolor="#854f0b"];
+	}
 
-    subgraph cluster_http {
-        label="HTTP Protocol";
-        style="filled,dashed";
-        color="#444444";
-        fillcolor="#222222";
-        fontcolor="#aaaaaa";
-        fontsize=12;
-        http [label="http.c\nRequest parser\nURL decode, header parse" fillcolor="#1a4a3a" fontcolor="#ffffff"];
-        response [label="response.c\nResponse builder\nerror pages, redirects" fillcolor="#1a4a3a" fontcolor="#ffffff"];
-        mime [label="mime.c\nMIME type lookup\nextension table" fillcolor="#1a4a3a" fontcolor="#ffffff"];
-        auth [label="auth.c\nBasic Auth\nBase64 decode" fillcolor="#1a4a3a" fontcolor="#ffffff"];
-    }
+	subgraph cluster_http {
+		label="HTTP Protocol";
+		style="filled,dashed";
+		color="#dedcd6";
+		fillcolor="#f6f5f2";
+		fontcolor="#8a8983";
+		fontsize=12;
+		http [label="http.c\nRequest parser\nbuffered header read" fillcolor="#e1f5ee" color="#0f6e56" fontcolor="#0f6e56"];
+		response [label="response.c\nResponse builder\nerror pages, redirects" fillcolor="#e1f5ee" color="#0f6e56" fontcolor="#0f6e56"];
+		header_cache [label="header_cache.c\nPre-computed headers\nDate/Server/Connection" fillcolor="#e1f5ee" color="#0f6e56" fontcolor="#0f6e56"];
+		mime [label="mime.c\nMIME type lookup\nextension table" fillcolor="#e1f5ee" color="#0f6e56" fontcolor="#0f6e56"];
+		auth [label="auth.c\nBasic Auth\nBase64 decode" fillcolor="#e1f5ee" color="#0f6e56" fontcolor="#0f6e56"];
+	}
 
-    subgraph cluster_file {
-        label="File Serving";
-        style="filled,dashed";
-        color="#444444";
-        fillcolor="#222222";
-        fontcolor="#aaaaaa";
-        fontsize=12;
-        file [label="file.c\nFile serving, range requests\nsafe_path, ETag, LR inject" fillcolor="#4a1a3a" fontcolor="#ffffff"];
-    }
+	subgraph cluster_file {
+		label="File Serving";
+		style="filled,dashed";
+		color="#dedcd6";
+		fillcolor="#f6f5f2";
+		fontcolor="#8a8983";
+		fontsize=12;
+		file [label="file.c\nsendfile() (Linux)\nthread-local buffers\nsafe_path, ETag, LR inject" fillcolor="#f3e8fc" color="#6b21a8" fontcolor="#6b21a8"];
+	}
 
-    subgraph cluster_livereload {
-        label="Live Reload";
-        style="filled,dashed";
-        color="#444444";
-        fillcolor="#222222";
-        fontcolor="#aaaaaa";
-        fontsize=12;
-        livereload [label="livereload.c\nSSE connections\nbroadcast, heartbeats" fillcolor="#2a4a3a" fontcolor="#ffffff"];
-        watcher [label="watcher.c\ninotify (Linux) / poll\nrecursive directory watch" fillcolor="#2a4a3a" fontcolor="#ffffff"];
-    }
+	subgraph cluster_livereload {
+		label="Live Reload";
+		style="filled,dashed";
+		color="#dedcd6";
+		fillcolor="#f6f5f2";
+		fontcolor="#8a8983";
+		fontsize=12;
+		livereload [label="livereload.c\nSSE connections\nhash map registry" fillcolor="#dff5f2" color="#0f7a6e" fontcolor="#0f7a6e"];
+		watcher [label="watcher.c\ninotify (Linux) / poll\nO(N) snapshot diff" fillcolor="#dff5f2" color="#0f7a6e" fontcolor="#0f7a6e"];
+	}
 
-    subgraph cluster_log {
-        label="Diagnostics";
-        style="filled,dashed";
-        color="#444444";
-        fillcolor="#222222";
-        fontcolor="#aaaaaa";
-        fontsize=12;
-        log [label="log.c\nThread-safe logger\ncolours, timestamps" fillcolor="#3a3a1a" fontcolor="#ffffff"];
-    }
+	subgraph cluster_log {
+		label="Diagnostics";
+		style="filled,dashed";
+		color="#dedcd6";
+		fillcolor="#f6f5f2";
+		fontcolor="#8a8983";
+		fontsize=12;
+		log [label="log.c\nLock-free ring buffer\nconsumer thread" fillcolor="#faf6d8" color="#8a7a0f" fontcolor="#8a7a0f"];
+	}
 
-    // ── Edges ─────────────────────────────────────────────────
+	subgraph cluster_util {
+		label="Utilities";
+		style="filled,dashed";
+		color="#dedcd6";
+		fillcolor="#f6f5f2";
+		fontcolor="#8a8983";
+		fontsize=12;
+		thread_buffer [label="thread_buffer.c\nTLS reusable buffers\nno malloc/free" fillcolor="#eef0f4" color="#46505c" fontcolor="#46505c"];
+	}
 
-    main -> server [label="ServerConfig"];
-    main -> log [label="log_init()"];
-    main -> project_config [style=dashed arrowhead=none];
-    main -> types [style=dashed arrowhead=none];
+	// ── Edges ─────────────────────────────────────────────────
 
-    server -> transport [label="Transport*"];
-    server -> thread_pool [label="submit tasks"];
-    server -> ratelimit [label="check/leave"];
-    server -> http [label="parse request"];
-    server -> auth [label="check creds"];
-    server -> livereload [label="start/stop"];
-    server -> file [label="dispatch serve"];
+	main -> server [label="ServerConfig"];
+	main -> log [label="log_init()"];
+	main -> project_config [style=dashed arrowhead=none color="#c7c6c0"];
+	main -> types [style=dashed arrowhead=none color="#c7c6c0"];
 
-    http -> transport [label="read raw headers"];
-    response -> transport [label="write response"];
-    file -> response [label="send_file()"];
-    file -> mime [label="mime_from_path()"];
-    file -> http [label="read HttpRequest" style=dashed];
+	server -> transport [label="Transport*"];
+	server -> thread_pool [label="submit tasks"];
+	server -> ratelimit [label="check/leave"];
+	server -> http [label="parse request"];
+	server -> auth [label="check creds"];
+	server -> livereload [label="start/stop"];
+	server -> file [label="dispatch serve"];
+	server -> header_cache [label="build headers"];
 
-    livereload -> watcher [label="create / start"];
-    livereload -> transport [label="SSE write"];
-    livereload -> response [style=dashed arrowhead=none];
+	http -> transport [label="read raw headers"];
+	response -> transport [label="write response"];
+	file -> response [label="send_file()"];
+	file -> mime [label="mime_from_path()"];
+	file -> http [label="read HttpRequest" style=dashed];
+	file -> thread_buffer [label="get_buffer()"];
 
-    log -> server [style=dashed dir=back constraint=false];
-    log -> file [style=dashed dir=back constraint=false];
-    log -> http [style=dashed dir=back constraint=false];
-    log -> transport [style=dashed dir=back constraint=false];
-    log -> thread_pool [style=dashed dir=back constraint=false];
-    log -> livereload [style=dashed dir=back constraint=false];
-    log -> ratelimit [style=dashed dir=back constraint=false];
-    log -> auth [style=dashed dir=back constraint=false];
-    log -> mime [style=dashed dir=back constraint=false];
+	livereload -> watcher [label="create / start"];
+	livereload -> transport [label="SSE write"];
+	livereload -> response [style=dashed arrowhead=none color="#c7c6c0"];
+
+	log -> server [style=dashed dir=back constraint=false color="#c7c6c0"];
+	log -> file [style=dashed dir=back constraint=false color="#c7c6c0"];
+	log -> http [style=dashed dir=back constraint=false color="#c7c6c0"];
+	log -> transport [style=dashed dir=back constraint=false color="#c7c6c0"];
+	log -> thread_pool [style=dashed dir=back constraint=false color="#c7c6c0"];
+	log -> livereload [style=dashed dir=back constraint=false color="#c7c6c0"];
+	log -> ratelimit [style=dashed dir=back constraint=false color="#c7c6c0"];
+	log -> auth [style=dashed dir=back constraint=false color="#c7c6c0"];
+	log -> mime [style=dashed dir=back constraint=false color="#c7c6c0"];
 }

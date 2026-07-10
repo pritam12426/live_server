@@ -1,58 +1,61 @@
 digraph startup_flow {
-    rankdir=TB;
-    bgcolor="#1a1a1a";
-    fontcolor="#dddddd";
-    fontname="Helvetica";
-    label="Server Startup Sequence";
-    labeljust=l;
-    fontsize=18;
-    pad=0.5;
-    nodesep=0.3;
-    ranksep=0.4;
+	rankdir=TB;
+	bgcolor="#fcfcfb";
+	fontcolor="#1a1a1a";
+	fontname="Helvetica";
+	label="Server Startup Sequence (Optimized)";
+	labeljust=l;
+	fontsize=18;
+	pad=0.4;
+	nodesep=0.3;
+	ranksep=0.4;
 
-    node [fontname="Helvetica" fontsize=10 shape=box style="filled,rounded" color="#555555" fontcolor="#dddddd"];
-    edge [color="#666666" fontcolor="#aaaaaa" fontname="Helvetica" fontsize=9];
+	node [fontname="Helvetica" fontsize=10 shape=box style="filled,rounded" color="#d8d7d2" fontcolor="#3a3a38" penwidth=1];
+	edge [color="#9c9b95" fontcolor="#6b6a66" fontname="Helvetica" fontsize=9 arrowsize=0.7 penwidth=1];
 
-    // ── Steps ─────────────────────────────────────────────────
+	// ── Steps ─────────────────────────────────────────────────
 
-    step1 [label="1. main() start" fillcolor="#1e3a5f" fontcolor="#ffffff" shape=cds];
-    step2 [label="2. argp_parse()\nparse CLI flags" fillcolor="#1e3a5f" fontcolor="#ffffff"];
-    step3 [label="3. log_init(NULL)\nlogger → stderr" fillcolor="#3a3a1a" fontcolor="#ffffff"];
-    step4 [label="4. Build ServerConfig\nfrom parsed args" fillcolor="#1e3a5f" fontcolor="#ffffff"];
-    step5 [label="5. server_run(&cfg)" fillcolor="#5a3e1a" fontcolor="#ffffff" shape=cds];
+	step1 [label="1. main() start" fillcolor="#e8f0fc" color="#1e50a2" fontcolor="#1e50a2" shape=cds];
+	step2 [label="2. argp_parse()\nparse CLI flags" fillcolor="#e8f0fc" color="#1e50a2" fontcolor="#1e50a2"];
+	step3 [label="3. log_init(NULL)\nlock-free ring buffer\nspawns consumer thread" fillcolor="#faf6d8" color="#8a7a0f" fontcolor="#8a7a0f"];
+	step4 [label="4. Build ServerConfig\nfrom parsed args" fillcolor="#e8f0fc" color="#1e50a2" fontcolor="#1e50a2"];
+	step5 [label="5. server_run(&cfg)" fillcolor="#faeeda" color="#854f0b" fontcolor="#854f0b" shape=cds];
 
-    step6 [label="6. Install signal handlers\nSIGINT/SIGTERM → g_shutdown\nSIGPIPE → ignore" fillcolor="#5a3e1a" fontcolor="#ffffff"];
-    step7 [label="7. make_listener()\ngetaddrinfo → socket\nbind → listen(128)" fillcolor="#5a3e1a" fontcolor="#ffffff"];
+	step6 [label="6. Install signal handlers\nSIGINT/SIGTERM → g_shutdown\nSIGPIPE → ignore" fillcolor="#faeeda" color="#854f0b" fontcolor="#854f0b"];
+	step7 [label="7. make_listener()\ngetaddrinfo → socket\nbind → listen(128)" fillcolor="#faeeda" color="#854f0b" fontcolor="#854f0b"];
 
-    decision_lr [label="8. Live reload enabled?" shape=diamond fillcolor="#3a3a1a" fontcolor="#ffffff"];
-    step8a [label="   livereload_start()\n   watcher_create() → watcher_start()\n   (background thread)" fillcolor="#2a4a3a" fontcolor="#ffffff"];
+	decision_lr [label="8. Live reload enabled?" shape=diamond fillcolor="#faf6d8" color="#8a7a0f" fontcolor="#8a7a0f"];
+	step8a [label="   livereload_start()\n   hash map SSE registry\n   watcher_create() → watcher_start()\n   (background thread)" fillcolor="#dff5f2" color="#0f7a6e" fontcolor="#0f7a6e"];
 
-    step9 [label="9. thread_pool_create(N)\n   N worker threads started\n   waiting on not_empty" fillcolor="#3d2b1a" fontcolor="#ffffff"];
-    step9b [label="10. ratelimit_create()\n   if max_conns_per_ip > 0" fillcolor="#3d2b1a" fontcolor="#ffffff"];
+	step9 [label="9. thread_pool_create(N)\n   N worker threads started\n   waiting on not_empty" fillcolor="#faeeda" color="#854f0b" fontcolor="#854f0b"];
+	step9b [label="10. ratelimit_create()\n   if max_conns_per_ip > 0\ndynamic hash table" fillcolor="#faeeda" color="#854f0b" fontcolor="#854f0b"];
 
-    step10 [label="11. Log startup info\nURL, pool size, keep-alive\nrate limit, LR mode" fillcolor="#3a3a1a" fontcolor="#ffffff"];
+	step10 [label="11. header_cache_init()\npre-compute Date/Server/Connection\nupdates once/sec" fillcolor="#e1f5ee" color="#0f6e56" fontcolor="#0f6e56"];
 
-    decision_browser [label="12. Browser flag set?" shape=diamond fillcolor="#3a3a1a" fontcolor="#ffffff"];
-    step12a [label="   fork() + execlp()\n   browser URL" fillcolor="#2d2d2d"];
+	step11 [label="12. Log startup info\nURL, pool size, keep-alive\nrate limit, LR mode" fillcolor="#faf6d8" color="#8a7a0f" fontcolor="#8a7a0f"];
 
-    step13 [label="13. while (!g_shutdown)\n   accept() loop" fillcolor="#5a3e1a" fontcolor="#ffffff" shape=cds];
+	decision_browser [label="13. Browser flag set?" shape=diamond fillcolor="#faf6d8" color="#8a7a0f" fontcolor="#8a7a0f"];
+	step13a [label="   fork() + execlp()\n   browser URL" fillcolor="#ffffff" color="#d8d7d2" fontcolor="#6b6a66"];
 
-    // ── Edges ─────────────────────────────────────────────────
+	step14 [label="14. while (!g_shutdown)\n   accept() loop" fillcolor="#e8f0fc" color="#1e50a2" fontcolor="#1e50a2" shape=cds];
 
-    step1 -> step2;
-    step2 -> step3;
-    step3 -> step4;
-    step4 -> step5;
-    step5 -> step6;
-    step6 -> step7;
-    step7 -> decision_lr;
-    decision_lr -> step8a [label="yes"];
-    decision_lr -> step9 [label="no"];
-    step8a -> step9;
-    step9 -> step9b;
-    step9b -> step10;
-    step10 -> decision_browser;
-    decision_browser -> step12a [label="yes"];
-    decision_browser -> step13 [label="no"];
-    step12a -> step13;
+	// ── Edges ─────────────────────────────────────────────────
+
+	step1 -> step2;
+	step2 -> step3;
+	step3 -> step4;
+	step4 -> step5;
+	step5 -> step6;
+	step6 -> step7;
+	step7 -> decision_lr;
+	decision_lr -> step8a [label="yes"];
+	decision_lr -> step9 [label="no"];
+	step8a -> step9;
+	step9 -> step9b;
+	step9b -> step10;
+	step10 -> step11;
+	step11 -> decision_browser;
+	decision_browser -> step13a [label="yes"];
+	decision_browser -> step14 [label="no"];
+	step13a -> step14;
 }

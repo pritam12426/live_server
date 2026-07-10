@@ -9,10 +9,12 @@
 
 #include <errno.h>
 #include <limits.h>
+#include <netinet/tcp.h>
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
+#include <sys/uio.h>
 #include <unistd.h>
 
 #include "log.h"
@@ -31,6 +33,10 @@ Transport *transport_new(int fd)
 		return NULL;
 	}
 	t->fd = fd;
+
+	// Disable Nagle's algorithm for lower latency on small responses
+	int one = 1;
+	setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &one, sizeof one);
 
 	LOG_DEBUG("Transport created (fd=%d)", fd);
 	return t;
@@ -68,6 +74,16 @@ ssize_t transport_write(Transport *t, const void *buf, size_t len)
 		written += (size_t)n;
 	}
 	return (ssize_t)written;
+}
+
+// Scatter-gather write using writev() - writes multiple buffers in one syscall
+// Returns total bytes written, or -1 on error
+ssize_t transport_writev(Transport *t, const struct iovec *iov, int iovcnt)
+{
+	if (!t) return -1;
+
+	// SIGPIPE is ignored in server.c
+	return writev(t->fd, iov, iovcnt);
 }
 
 // Close the transport and free resources.

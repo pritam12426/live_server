@@ -8,6 +8,7 @@
 #ifndef _RATELIMIT_H_
 #define _RATELIMIT_H_
 
+
 typedef struct RateLimit RateLimit;
 
 // Create a limiter that allows max_conns_per_ip simultaneous connections.
@@ -22,5 +23,6 @@ void ratelimit_leave(RateLimit *rl, const char *ip);
 
 // Free all resources.
 void ratelimit_destroy(RateLimit *rl);
+
 
 #endif  // _RATELIMIT_H_

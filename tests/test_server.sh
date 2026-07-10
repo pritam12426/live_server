@@ -27,7 +27,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-"$SERVER_BIN" -I "$ROOT" -P "$PORT" -H 127.0.0.1 -L error -t 2 -k 5 &
+"$SERVER_BIN" -I "$ROOT" -P "$PORT" -H 127.0.0.1 -L error -T 2 -K 5 &
 echo $! > /tmp/live_server_test.pid
 SERVER_PID=$!
 
@@ -114,7 +114,7 @@ CL2=$(curl -sI -H "Connection: close" "$BASE/" | grep -i "^Connection:" | tr -d 
 echo ""
 echo "=== Authentication ==="
 AUTH_PORT=$((PORT + 1))
-"$SERVER_BIN" -I "$ROOT" -P "$AUTH_PORT" -H 127.0.0.1 -u admin -p secret -L error -t 2 &
+"$SERVER_BIN" -I "$ROOT" -P "$AUTH_PORT" -H 127.0.0.1 -u admin -p secret -L error -T 2 &
 echo $! >> /tmp/live_server_test.pid
 sleep 0.5
 AUTH_BASE="http://127.0.0.1:$AUTH_PORT"

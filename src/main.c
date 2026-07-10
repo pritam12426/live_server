@@ -31,8 +31,8 @@ static struct argp_option options[] = {
 	{ 0, 0, 0, 0, "Connection:", 3 },
 	{ "port",       'P', "PORT",  0,  "TCP port to listen on (default: 8080)",                       3 },
 	{ "host",       'H', "HOST",  0,  "Listener host / IP (default: localhost)",                     3 },
-	{ "threads",    't', "NUM",   0,  "Thread pool size (default: 2)",                               3 },
-	{ "keep-alive", 'k', "SECS",  0,  "Keep-alive timeout in seconds (default: 3, 0 = disable)",     3 },
+	{ "threads",    'T', "NUM",   0,  "Thread pool size (default: 2)",                               3 },
+	{ "keep-alive", 'K', "SECS",  0,  "Keep-alive timeout in seconds (default: 3, 0 = disable)",     3 },
 	{ "max-conns",  'M', "NUM",   0,  "Max concurrent connections per IP (default: 0 = unlimited)",  3 },
 
 	{ 0, 0, 0, 0, "Authentication:", 4 },
@@ -130,7 +130,7 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state)
 	}
 	case 'H': G_Args.host          = arg;  break;
 	case 'R': G_Args.print_request = true; break;
-	case 't': {
+	case 'T': {
 		char *end;
 		long n = strtol(arg, &end, 10);
 		if (*arg == '\0' || *end != '\0' || n < 1 || n > 256)
@@ -138,7 +138,7 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state)
 		G_Args.threads = (int)n;
 		break;
 	}
-	case 'k': {
+	case 'K': {
 		char *end;
 		long n = strtol(arg, &end, 10);
 		if (*arg == '\0' || *end != '\0' || n < 0 || n > 3600)
@@ -228,19 +228,19 @@ int main(int argc, char *argv[])
 
 	// Build server config from parsed arguments
 	ServerConfig cfg = {
-		.host            = G_Args.host,
-		.port            = G_Args.port,
-		.root_dir        = G_Args.dir,
-		.user            = G_Args.user,
-		.pass            = G_Args.pass,
-		.livereload_mode = G_Args.livereload_mode,
-		.print_request   = G_Args.print_request,
-		.ignore_hidden   = G_Args.ignore,
-		.poll            = G_Args.poll,
-		.browser         = G_Args.browser,
-		.thread_pool_size = G_Args.threads,
+		.host               = G_Args.host,
+		.port               = G_Args.port,
+		.root_dir           = G_Args.dir,
+		.user               = G_Args.user,
+		.pass               = G_Args.pass,
+		.livereload_mode    = G_Args.livereload_mode,
+		.print_request      = G_Args.print_request,
+		.ignore_hidden      = G_Args.ignore,
+		.poll               = G_Args.poll,
+		.browser            = G_Args.browser,
+		.thread_pool_size   = G_Args.threads,
 		.keep_alive_timeout = G_Args.keep_alive,
-		.max_conns_per_ip = G_Args.max_conns,
+		.max_conns_per_ip   = G_Args.max_conns,
 	};
 
 	// Enter the main server loop — this blocks until shutdown

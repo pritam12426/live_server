@@ -56,22 +56,30 @@ void http_url_decode(char *dst, size_t dst_size, const char *src)
 	dst[di] = '\0';
 }
 
-// Read HTTP headers character-by-character until \r\n\r\n
-// Returns total bytes read (including the blank line), or -1 on error
+// Read HTTP headers in buffered chunks until \r\n\r\n is found.
+// Returns total bytes read (including the blank line), or -1 on error.
 static ssize_t read_headers(Transport *t, char *buf, size_t max)
 {
 	size_t n  = 0;
-	ssize_t rc;
 
 	while (n + 1 < max) {
-		rc = transport_read(t, buf + n, 1);
+		// Read in chunks to minimize syscalls; leave room for partial match
+		size_t want = max - n;
+		if (want > 4096) want = 4096;
+		ssize_t rc = transport_read(t, buf + n, want);
 		if (rc <= 0) return -1;
-		n++;
-		// Detect end of headers: \r\n\r\n
-		if (n >= 4
-			&& buf[n-4] == '\r' && buf[n-3] == '\n'
-			&& buf[n-2] == '\r' && buf[n-1] == '\n')
-			break;
+		n += (size_t)rc;
+
+		// Scan the tail of the buffer for \r\n\r\n
+		size_t scan = (n >= 4) ? n - 4 : 0;
+		for (size_t i = scan; i + 3 < n; i++) {
+			if (buf[i] == '\r' && buf[i+1] == '\n'
+				&& buf[i+2] == '\r' && buf[i+3] == '\n') {
+				n = i + 4;
+				buf[n] = '\0';
+				return (ssize_t)n;
+			}
+		}
 	}
 	buf[n] = '\0';
 	return (ssize_t)n;

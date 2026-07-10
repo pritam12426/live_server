@@ -10,11 +10,19 @@
 #include <time.h>
 #include <unistd.h>
 
+#if defined(__linux__)
+#include <sys/sendfile.h>
+#elif defined(__APPLE__) && defined(__MACH__)
+// macOS has sendfile in sys/uio.h but with different signature
+#include <sys/uio.h>
+#endif
+
 #include "log.h"
 #include "mime.h"
-#include "project_config.h"
+// #include "project_config.h"
 #include "response.h"
 #include "transport.h"
+#include "thread_buffer.h"
 
 static const char LIVERELOAD_SCRIPT[] =
 	"<script>\n"
@@ -32,11 +40,87 @@ static const char LIVERELOAD_SCRIPT[] =
 	"})();\n"
 	"</script>\n";
 
+// Cached resolved root path (resolved once, then reused across all requests)
+static char g_real_root[4096];
+
+static void file_serve_set_root(const char *root)
+{
+	realpath(root, g_real_root);
+}
+
+// Find </body> case-insensitively in a single pass
+static char *find_body_close(char *haystack)
+{
+	for (char *p = haystack; *p; p++) {
+		if (*(p) == '<'
+			&& (p[1] == 'b' || p[1] == 'B')
+			&& (p[2] == 'o' || p[2] == 'O')
+			&& (p[3] == 'd' || p[3] == 'D')
+			&& (p[4] == 'y' || p[4] == 'Y')
+			&& (p[5] == '>')
+			&& (p[6] == '/')
+			&& (p[7] == 'b' || p[7] == 'B')
+			&& (p[8] == 'o' || p[8] == 'O')
+			&& (p[9] == 'd' || p[9] == 'D')
+			&& (p[10] == 'y' || p[10] == 'Y')
+			&& (p[11] == '>'))
+			return p;
+	}
+	return NULL;
+}
+
+// Fast hex digit lookup
+static const char *hex_digits = "0123456789abcdef";
+
+// Hand-rolled ETag formatter: avoids snprintf overhead
+// Format: "mtime-hex-size-hex" (both lowercase hex)
 static void build_etag(const struct stat *st, char *buf, size_t len)
 {
-	snprintf(buf, len, "\"%lx-%lx\"",
-	            (unsigned long)st->st_mtime,
-	            (unsigned long)st->st_size);
+	(void)len; // buffer is at least 64 bytes
+	unsigned long mtime = (unsigned long)st->st_mtime;
+	unsigned long size  = (unsigned long)st->st_size;
+
+	*buf++ = '"';
+
+	// Write mtime as hex (8 bytes for 32-bit, up to 16 for 64-bit)
+	char mtime_buf[16];
+	int mtime_len = 0;
+	if (mtime == 0) {
+		mtime_buf[mtime_len++] = '0';
+	} else {
+		char tmp[16];
+		int idx = 0;
+		while (mtime > 0) {
+			tmp[idx++] = hex_digits[mtime & 0xF];
+			mtime >>= 4;
+		}
+		// Reverse
+		while (idx > 0) {
+			mtime_buf[mtime_len++] = tmp[--idx];
+		}
+	}
+	memcpy(buf, mtime_buf, mtime_len);
+	buf += mtime_len;
+
+	*buf++ = '-';
+
+	// Write size as hex
+	if (size == 0) {
+		*buf++ = '0';
+	} else {
+		char tmp[16];
+		int idx = 0;
+		while (size > 0) {
+			tmp[idx++] = hex_digits[size & 0xF];
+			size >>= 4;
+		}
+		while (idx > 0) {
+			*buf++ = tmp[--idx];
+		}
+	}
+
+	*buf++ = '"';
+	*buf = '\0';
 }
 
 static void http_date(time_t t, char *buf, size_t len)
@@ -46,20 +130,33 @@ static void http_date(time_t t, char *buf, size_t len)
 	strftime(buf, len, "%a, %d %b %Y %H:%M:%S GMT", &tm);
 }
 
+#if defined(__linux__)
+// RFC 1123 date for HTTP headers
+static void rfc1123_date(char *buf, size_t len)
+{
+	time_t    now = time(NULL);
+	struct tm tm;
+	gmtime_r(&now, &tm);
+	strftime(buf, len, "%a, %d %b %Y %H:%M:%S GMT", &tm);
+}
+#endif
+
 static int safe_path(const char *root, const char *url_path, char *out, size_t out_len)
 {
-	char real_root[4096];
-	if (realpath(root, real_root) == NULL)
-		return 0;
+	// Use cached resolved root if available, otherwise resolve and cache
+	if (g_real_root[0] == '\0') {
+		if (realpath(root, g_real_root) == NULL)
+			return 0;
+	}
 
-	size_t root_len = strlen(real_root);
+	size_t root_len = strlen(g_real_root);
 
 	char tmp[4096];
 	snprintf(tmp, sizeof tmp, "%s%s", root, url_path);
 
 	char resolved[4096];
 	if (realpath(tmp, resolved) != NULL) {
-		if (strncmp(resolved, real_root, root_len) != 0)
+		if (strncmp(resolved, g_real_root, root_len) != 0)
 			return 0;
 		if (resolved[root_len] != '/' && resolved[root_len] != '\0')
 			return 0;
@@ -84,7 +181,7 @@ static int safe_path(const char *root, const char *url_path, char *out, size_t o
 	if (realpath(dir_part, resolved_dir) == NULL)
 		return 0;
 
-	if (strncmp(resolved_dir, real_root, root_len) != 0)
+	if (strncmp(resolved_dir, g_real_root, root_len) != 0)
 		return 0;
 	if (resolved_dir[root_len] != '/' && resolved_dir[root_len] != '\0')
 		return 0;
@@ -138,12 +235,15 @@ static int send_file(Transport          *t,
                      int                client_port,
                      const HttpRequest *req,
                      const char        *fs_path,
+                     const struct stat *pre_stat,
                      LivereloadMode     livereload_mode,
                      int                print_request,
                      int                keep_alive)
 {
 	struct stat st;
-	if (stat(fs_path, &st) != 0) {
+	if (pre_stat) {
+		st = *pre_stat;
+	} else if (stat(fs_path, &st) != 0) {
 		response_error(t, 404, "Not Found", "File not found.");
 		if (print_request)
 			log_request(client_ip, client_port, req, 404, -1, NULL);
@@ -190,9 +290,6 @@ static int send_file(Transport          *t,
 	}
 
 	long file_size = (long) st.st_size;
-	// int is_remote = strcmp(client_ip, "127.0.0.1") != 0
-	//              && strcmp(client_ip, "::1") != 0
-	//              && strcmp(client_ip, "localhost") != 0;
 	LOG_INFO("%s:%d \"%s %s\" (%s, %ld bytes)",
 	         client_ip, client_port, req->method_str, req->path, mime, file_size);
 
@@ -208,7 +305,7 @@ static int send_file(Transport          *t,
 	if (is_html && livereload_mode != LIVERELOAD_OFF) {
 		LOG_DEBUG("Injecting live-reload script into %s", req->path);
 		size_t script_len = strlen(LIVERELOAD_SCRIPT);
-		char  *body       = malloc((size_t) file_size + script_len + 32);
+		char  *body       = thread_buffer_get_body((size_t) file_size + script_len + 32);
 		if (!body) {
 			close(fd);
 			response_error(t, 500, "Internal Server Error", "Out of memory.");
@@ -220,9 +317,7 @@ static int send_file(Transport          *t,
 		size_t body_len = (n > 0) ? (size_t) n : 0;
 		body[body_len]  = '\0';
 
-		char *closing = strcasestr(body, "</body>");
-		if (!closing)
-			closing = strcasestr(body, "</BODY>");
+		char *closing = find_body_close(body);
 		if (closing) {
 			memmove(closing + script_len, closing, body_len - (size_t) (closing - body) + 1);
 			memcpy(closing, LIVERELOAD_SCRIPT, script_len);
@@ -242,7 +337,6 @@ static int send_file(Transport          *t,
 		              req->method != HTTP_HEAD);
 		if (print_request)
 			log_request(client_ip, client_port, req, 200, (long long) body_len, mime);
-		free(body);
 		return 200;
 	}
 
@@ -281,10 +375,60 @@ static int send_file(Transport          *t,
 	}
 
 	long send_len = range_last - range_first + 1;
-	if (range_first > 0)
-		lseek(fd, (off_t) range_first, SEEK_SET);
+	off_t offset = (off_t) range_first;
 
-	char *body = malloc((size_t) send_len);
+#if defined(__linux__)
+	// Use sendfile() for zero-copy file transfer on Linux (non-range, GET only)
+	if (!is_range && req->method != HTTP_HEAD) {
+		// Build and write header directly
+		char date[64];
+		rfc1123_date(date, sizeof date);
+		char extra[512];
+		snprintf(extra,
+		         sizeof extra,
+		         "ETag: %s\r\nLast-Modified: %s\r\nAccept-Ranges: bytes\r\n",
+		         etag,
+		         last_modified);
+		char hdr[4096];
+		int  hdr_len = snprintf(hdr,
+		                        sizeof hdr,
+		                        "HTTP/1.1 200 OK\r\n"
+		                        "Date: %s\r\n"
+		                        "Server: " MAIN_BINARY "/" PROJECT_VERSION "\r\n"
+		                        "Content-Type: %s\r\n"
+		                        "Content-Length: %ld\r\n"
+		                        "%s"
+		                        "Connection: %s\r\n"
+		                        "\r\n",
+		                        date,
+		                        mime,
+		                        file_size,
+		                        extra,
+		                        keep_alive ? "keep-alive" : "close");
+
+		// Write header directly via transport
+		transport_write(t, hdr, (size_t)hdr_len);
+
+		// Use sendfile for zero-copy body transfer
+		ssize_t sent = sendfile(transport_fd(t), fd, &offset, (size_t)file_size);
+		close(fd);
+
+		if (sent < 0) {
+			LOG_PERROR("sendfile failed on fd=%d", transport_fd(t));
+			return 500;
+		}
+
+		if (print_request)
+			log_request(client_ip, client_port, req, 200, (long long) sent, mime);
+		return 200;
+	}
+#endif
+
+	// Fallback for range requests, HEAD, non-Linux, or if sendfile not used
+	if (range_first > 0)
+		lseek(fd, offset, SEEK_SET);
+
+	char *body = thread_buffer_get_body((size_t) send_len);
 	if (!body) {
 		close(fd);
 		response_error(t, 500, "Internal Server Error", "Out of memory.");
@@ -295,7 +439,6 @@ static int send_file(Transport          *t,
 	close(fd);
 
 	if (nread <= 0) {
-		free(body);
 		response_error(t, 500, "Internal Server Error", "Read error.");
 		return 500;
 	}
@@ -332,7 +475,6 @@ static int send_file(Transport          *t,
 	              req->method != HTTP_HEAD);
 	if (print_request)
 		log_request(client_ip, client_port, req, status, (long long) body_len, mime);
-	free(body);
 	return status;
 }
 
@@ -351,6 +493,10 @@ int file_serve(const char        *root,
 			log_request(client_ip, client_port, req, 405, -1, NULL);
 		return 405;
 	}
+
+	// Resolve root once for the lifetime of the server
+	if (g_real_root[0] == '\0')
+		file_serve_set_root(root);
 
 	char fs_path[4096];
 	if (!safe_path(root, req->path, fs_path, sizeof fs_path)) {
@@ -387,7 +533,7 @@ int file_serve(const char        *root,
 		if (stat(index_path, &idx_st) == 0 && S_ISREG(idx_st.st_mode)) {
 			LOG_DEBUG("Serving index.html: %s", index_path);
 			return send_file(t, client_ip, client_port, req, index_path,
-			                 livereload_mode, print_request, keep_alive);
+			                 &idx_st, livereload_mode, print_request, keep_alive);
 		}
 
 		LOG_WARN("No index.html in %s", req->path);
@@ -406,5 +552,5 @@ int file_serve(const char        *root,
 	}
 
 	LOG_DEBUG("Serving file: %s → fd=%d", req->path, transport_fd(t));
-	return send_file(t, client_ip, client_port, req, fs_path, livereload_mode, print_request, keep_alive);
+	return send_file(t, client_ip, client_port, req, fs_path, &st, livereload_mode, print_request, keep_alive);
 }

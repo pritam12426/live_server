@@ -1,8 +1,9 @@
 /*
  * livereload.c — Server-Sent Events (SSE) live-reload system
  *
- * Maintains a registry of SSE clients, starts a file-system watcher,
- * and broadcasts "reload" or "hard-reload" events when files change.
+ * Maintains a registry of SSE clients using a hash map for O(1) operations,
+ * starts a file-system watcher, and broadcasts "reload" or "hard-reload"
+ * events when files change.
  */
 
 #include "livereload.h"
@@ -22,49 +23,90 @@
 #include "transport.h"
 #include "watcher.h"
 
-// Maximum number of simultaneous SSE connections
-#define LR_MAX_CLIENTS 256
+// Hash map configuration
+#define LR_MAP_SIZE 1024  // Power of 2 for bitwise modulo
+#define LR_MAP_MASK (LR_MAP_SIZE - 1)
 
-// A single SSE client entry in the registry
-typedef struct {
-	Transport *transport;
+// SSE client entry in hash map
+typedef struct LRClient {
+	Transport       *transport;
+	int              fd;    // Cached fd for logging
+	struct LRClient *next;  // Collision chain
 } LRClient;
 
-// Global SSE client registry (protected by lr_mutex)
-static LRClient         lr_clients[LR_MAX_CLIENTS];
-static pthread_mutex_t  lr_mutex  = PTHREAD_MUTEX_INITIALIZER;
-static atomic_int       lr_stop      = 0;   // Shutdown flag
-static Watcher         *lr_watcher   = NULL; // File-system watcher instance
-static void            *lr_userdata  = NULL; // Freed on shutdown
+// Hash map buckets (each bucket is head of collision chain)
+static LRClient *lr_buckets[LR_MAP_SIZE];
+static pthread_mutex_t lr_mutex = PTHREAD_MUTEX_INITIALIZER;
+static atomic_int lr_stop = 0;
+static Watcher *lr_watcher = NULL;
+static void *lr_userdata = NULL;
+static atomic_int lr_client_count = 0;
 
-// Register an SSE client in the first free slot
-// Returns the slot index, or -1 if the table is full
-static int lr_add_client(Transport *t)
+// Hash function for file descriptor
+static inline size_t lr_hash_fd(int fd)
 {
-	pthread_mutex_lock(&lr_mutex);
-	for (int i = 0; i < LR_MAX_CLIENTS; i++) {
-		if (lr_clients[i].transport == NULL) {
-			lr_clients[i].transport = t;
-			pthread_mutex_unlock(&lr_mutex);
-			LOG_INFO("SSE client connected (slot=%d, fd=%d)", i, transport_fd(t));
-			return i;
-		}
-	}
-	pthread_mutex_unlock(&lr_mutex);
-	LOG_WARN("SSE client table full (%d slots), rejecting fd=%d", LR_MAX_CLIENTS, transport_fd(t));
-	return -1;
+	return (size_t)fd & LR_MAP_MASK;
 }
 
-// Remove an SSE client from the registry by slot index
-static void lr_remove_client(int slot)
+// Register an SSE client in the hash map
+// Returns 0 on success, -1 if map is full (shouldn't happen with LR_MAP_SIZE=1024)
+static int lr_add_client(Transport *t)
+{
+	int fd = transport_fd(t);
+
+	pthread_mutex_lock(&lr_mutex);
+
+	// Check if we're at capacity (very unlikely with 1024 slots)
+	int current_count = atomic_load_explicit(&lr_client_count, memory_order_relaxed);
+	if (current_count >= LR_MAP_SIZE) {
+		pthread_mutex_unlock(&lr_mutex);
+		LOG_WARN("SSE client map full (%d slots), rejecting fd=%d", LR_MAP_SIZE, fd);
+		return -1;
+	}
+
+	LRClient *client = malloc(sizeof(LRClient));
+	if (!client) {
+		pthread_mutex_unlock(&lr_mutex);
+		return -1;
+	}
+
+	client->transport = t;
+	client->fd = fd;
+
+	size_t bucket = lr_hash_fd(fd);
+	client->next = lr_buckets[bucket];
+	lr_buckets[bucket] = client;
+
+	atomic_fetch_add_explicit(&lr_client_count, 1, memory_order_relaxed);
+
+	pthread_mutex_unlock(&lr_mutex);
+
+	LOG_INFO("SSE client connected (fd=%d, total=%d)", fd, current_count + 1);
+	return 0;
+}
+
+// Remove an SSE client from the hash map by fd
+static void lr_remove_client(int fd)
 {
 	pthread_mutex_lock(&lr_mutex);
-	Transport *t = lr_clients[slot].transport;
-	lr_clients[slot].transport = NULL;
-	pthread_mutex_unlock(&lr_mutex);
-	if (t) {
-		LOG_INFO("SSE client disconnected (slot=%d, fd=%d)", slot, transport_fd(t));
+
+	size_t bucket = lr_hash_fd(fd);
+	LRClient **pp = &lr_buckets[bucket];
+
+	while (*pp) {
+		if ((*pp)->fd == fd) {
+			LRClient *to_free = *pp;
+			*pp = to_free->next;
+			free(to_free);
+			atomic_fetch_sub_explicit(&lr_client_count, 1, memory_order_relaxed);
+			LOG_INFO("SSE client disconnected (fd=%d, remaining=%d)",
+			         fd, atomic_load_explicit(&lr_client_count, memory_order_relaxed) - 1);
+			break;
+		}
+		pp = &(*pp)->next;
 	}
+
+	pthread_mutex_unlock(&lr_mutex);
 }
 
 // Broadcast an SSE event to all connected clients
@@ -72,26 +114,36 @@ static void lr_remove_client(int slot)
 void livereload_broadcast(const char *event)
 {
 	char frame[128];
-	int  flen = snprintf(frame, sizeof frame, "data: %s\n\n", event);
-	int  sent = 0;
+	int flen = snprintf(frame, sizeof frame, "data: %s\n\n", event);
+	int sent = 0;
 
 	pthread_mutex_lock(&lr_mutex);
-	for (int i = 0; i < LR_MAX_CLIENTS; i++) {
-		Transport *t = lr_clients[i].transport;
-		if (t == NULL) continue;
-		if (transport_write(t, frame, (size_t)flen) <= 0) {
-			LOG_WARN("SSE broadcast to fd=%d failed, removing client", transport_fd(t));
-			lr_clients[i].transport = NULL;
-		} else {
-			sent++;
+
+	for (size_t i = 0; i < LR_MAP_SIZE; i++) {
+		LRClient *client = lr_buckets[i];
+		LRClient **pp = &lr_buckets[i];
+
+		while (client) {
+			if (transport_write(client->transport, frame, (size_t)flen) <= 0) {
+				LOG_WARN("SSE broadcast to fd=%d failed, removing client", client->fd);
+				LRClient *to_free = client;
+				*pp = client->next;
+				client = client->next;
+				free(to_free);
+				atomic_fetch_sub_explicit(&lr_client_count, 1, memory_order_relaxed);
+			} else {
+				sent++;
+				pp = &client->next;
+				client = client->next;
+			}
 		}
 	}
+
 	pthread_mutex_unlock(&lr_mutex);
 	LOG_DEBUG("SSE broadcast '%s' to %d client(s)", event, sent);
 }
 
 // File-change callback invoked by the watcher
-// Sends the appropriate reload event based on mode
 static void on_change(const char *path, void *userdata)
 {
 	LivereloadMode mode = *(LivereloadMode *)userdata;
@@ -102,12 +154,12 @@ static void on_change(const char *path, void *userdata)
 }
 
 // Start the live-reload system: initialise client registry + file watcher
-// Returns 0 on success, -1 on error
 int livereload_start(const char *root, LivereloadMode mode, bool poll)
 {
-	// Clear client registry
-	for (int i = 0; i < LR_MAX_CLIENTS; i++)
-		lr_clients[i].transport = NULL;
+	// Clear hash map
+	for (size_t i = 0; i < LR_MAP_SIZE; i++)
+		lr_buckets[i] = NULL;
+	atomic_store_explicit(&lr_client_count, 0, memory_order_relaxed);
 	atomic_store_explicit(&lr_stop, 0, memory_order_relaxed);
 
 	// Allocate a copy of the mode so the callback can use it
@@ -143,11 +195,9 @@ int livereload_start(const char *root, LivereloadMode mode, bool poll)
 #elif defined(__APPLE__) && defined(__MACH__)
 	lr_backend_str = "poll";
 	(void)poll;
-#endif  // __linux__
+#endif
 
-	LOG_INFO("Live-reload watching: %s (%s)",
-			 root,
-			 lr_backend_str);
+	LOG_INFO("Live-reload watching: %s (%s)", root, lr_backend_str);
 	return 0;
 }
 
@@ -165,11 +215,18 @@ void livereload_stop(void)
 	free(lr_userdata);
 	lr_userdata = NULL;
 
-	// Clear all client references (don't close transports — let server.c do it)
+	// Clear all client references and free memory
 	pthread_mutex_lock(&lr_mutex);
-	for (int i = 0; i < LR_MAX_CLIENTS; i++) {
-		lr_clients[i].transport = NULL;
+	for (size_t i = 0; i < LR_MAP_SIZE; i++) {
+		LRClient *client = lr_buckets[i];
+		while (client) {
+			LRClient *next = client->next;
+			free(client);
+			client = next;
+		}
+		lr_buckets[i] = NULL;
 	}
+	atomic_store_explicit(&lr_client_count, 0, memory_order_relaxed);
 	pthread_mutex_unlock(&lr_mutex);
 }
 
@@ -187,13 +244,13 @@ void livereload_handle_sse(Transport *t)
 	if (transport_write(t, SSE_HEADERS, sizeof(SSE_HEADERS) - 1) <= 0)
 		return;
 
-	int slot = lr_add_client(t);
-	if (slot < 0) {
+	if (lr_add_client(t) < 0) {
 		transport_write(t, ": server-full\n\n", 15);
 		return;
 	}
 
-	LOG_DEBUG("SSE heartbeat loop started for fd=%d (slot=%d)", transport_fd(t), slot);
+	int fd = transport_fd(t);
+	LOG_DEBUG("SSE heartbeat loop started for fd=%d", fd);
 
 	// Send heartbeats every 15 s to keep the connection alive
 	static const char HEARTBEAT[] = ": heartbeat\n\n";
@@ -202,11 +259,11 @@ void livereload_handle_sse(Transport *t)
 		nanosleep(&ts, NULL);
 
 		if (transport_write(t, HEARTBEAT, sizeof(HEARTBEAT) - 1) <= 0) {
-			LOG_DEBUG("SSE client fd=%d disconnected", transport_fd(t));
+			LOG_DEBUG("SSE client fd=%d disconnected", fd);
 			break;
 		}
-		LOG_DEBUG("SSE heartbeat sent to fd=%d", transport_fd(t));
+		LOG_DEBUG("SSE heartbeat sent to fd=%d", fd);
 	}
 
-	lr_remove_client(slot);
+	lr_remove_client(fd);
 }

@@ -8,8 +8,10 @@
 #ifndef _TRANSPORT_H_
 #define _TRANSPORT_H_
 
+
 #include <stdbool.h>
 #include <stddef.h>
+#include <sys/uio.h>
 #include <sys/types.h>
 
 typedef struct Transport Transport;
@@ -24,6 +26,9 @@ int transport_accept(Transport *t);
 ssize_t transport_read(Transport *t, void *buf, size_t len);
 ssize_t transport_write(Transport *t, const void *buf, size_t len);
 
+// Scatter-gather write (writev) - writes multiple buffers in one syscall
+ssize_t transport_writev(Transport *t, const struct iovec *iov, int iovcnt);
+
 // Close the transport and free resources.
 void transport_close(Transport *t);
 
@@ -36,5 +41,6 @@ int transport_set_timeout(Transport *t, int seconds);
 // Accessors
 int  transport_fd(const Transport *t);
 bool transport_is_tls(const Transport *t);
+
 
 #endif  // _TRANSPORT_H_

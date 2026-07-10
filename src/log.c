@@ -35,13 +35,11 @@
 
 // ── Logger state ─────────────────────────────────────────────────────────────
 //
-// Protected by g_rwlock:
-//   - readers (log_record, log_get_level, log_use_color) take a READ lock —
-//     many threads can log simultaneously.
-//   - writers (log_init, log_set_level) take a WRITE lock —
-//     exclusive access, blocks until all readers finish.
+// Protected by g_log_mutex.
+// Since log_record() always takes a write-lock (to prevent interleaved output),
+// a plain mutex is simpler and slightly faster than a rwlock.
 
-static pthread_rwlock_t g_rwlock     = PTHREAD_RWLOCK_INITIALIZER;
+static pthread_mutex_t  g_log_mutex  = PTHREAD_MUTEX_INITIALIZER;
 static Log_level_t      g_log_level  = LOG_LEVEL_INFO;
 static FILE            *g_log_stream = NULL;  // NULL = not yet initialised
 static bool             g_use_color  = false;
@@ -142,7 +140,7 @@ void log_init(const char *file_path)
 		}
 	}
 
-	pthread_rwlock_wrlock(&g_rwlock);
+	pthread_mutex_lock(&g_log_mutex);
 	{
 		// Close any previously opened log file (but never close stderr)
 		if (g_log_stream != NULL && g_log_stream != stderr)
@@ -151,25 +149,25 @@ void log_init(const char *file_path)
 		g_log_stream = new_stream;
 		g_use_color  = new_color;
 	}
-	pthread_rwlock_unlock(&g_rwlock);
+	pthread_mutex_unlock(&g_log_mutex);
 }
 
 
 // Set the minimum log level; messages below this are suppressed
 void log_set_level(Log_level_t level)
 {
-	pthread_rwlock_wrlock(&g_rwlock);
+	pthread_mutex_lock(&g_log_mutex);
 	g_log_level = level;
-	pthread_rwlock_unlock(&g_rwlock);
+	pthread_mutex_unlock(&g_log_mutex);
 }
 
 
 // Get the current minimum log level
 Log_level_t log_get_level(void)
 {
-	pthread_rwlock_rdlock(&g_rwlock);
+	pthread_mutex_lock(&g_log_mutex);
 	Log_level_t level = g_log_level;
-	pthread_rwlock_unlock(&g_rwlock);
+	pthread_mutex_unlock(&g_log_mutex);
 	return level;
 }
 
@@ -177,9 +175,9 @@ Log_level_t log_get_level(void)
 // Check whether ANSI colour is enabled
 bool log_use_color(void)
 {
-	pthread_rwlock_rdlock(&g_rwlock);
+	pthread_mutex_lock(&g_log_mutex);
 	bool color = g_use_color;
-	pthread_rwlock_unlock(&g_rwlock);
+	pthread_mutex_unlock(&g_log_mutex);
 	return color;
 }
 
@@ -187,9 +185,9 @@ bool log_use_color(void)
 // Get the current log output stream (stderr if not initialised)
 FILE *log_get_file(void)
 {
-	pthread_rwlock_rdlock(&g_rwlock);
+	pthread_mutex_lock(&g_log_mutex);
 	FILE *stream = g_log_stream ? g_log_stream : stderr;
-	pthread_rwlock_unlock(&g_rwlock);
+	pthread_mutex_unlock(&g_log_mutex);
 	return stream;
 }
 
@@ -212,13 +210,13 @@ void log_record(Log_level_t level,
 		return;
 	}
 
-	// Take a write-lock so only one thread writes at a time
+	// Take a mutex so only one thread writes at a time
 	// (prevents interleaved log lines from concurrent requests)
-	pthread_rwlock_wrlock(&g_rwlock);
+	pthread_mutex_lock(&g_log_mutex);
 	{
 		// Suppress messages below the configured level
 		if (level > g_log_level) {
-			pthread_rwlock_unlock(&g_rwlock);
+			pthread_mutex_unlock(&g_log_mutex);
 			return;
 		}
 
@@ -251,5 +249,5 @@ void log_record(Log_level_t level,
 		fflush(g_log_stream);
 	}
 
-	pthread_rwlock_unlock(&g_rwlock);
+	pthread_mutex_unlock(&g_log_mutex);
 }

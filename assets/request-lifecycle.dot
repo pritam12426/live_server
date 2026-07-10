@@ -1,128 +1,131 @@
 digraph request_lifecycle {
-    rankdir=TB;
-    bgcolor="#1a1a1a";
-    fontcolor="#dddddd";
-    fontname="Helvetica";
-    label="HTTP Request — Full Lifecycle";
-    labeljust=l;
-    fontsize=18;
-    pad=0.5;
-    nodesep=0.3;
-    ranksep=0.5;
+	rankdir=TB;
+	bgcolor="#fcfcfb";
+	fontcolor="#1a1a1a";
+	fontname="Helvetica";
+	label="HTTP Request — Full Lifecycle (Optimized)";
+	labeljust=l;
+	fontsize=18;
+	pad=0.4;
+	nodesep=0.3;
+	ranksep=0.5;
 
-    node [fontname="Helvetica" fontsize=10 shape=box style="filled,rounded" fillcolor="#2d2d2d" color="#555555" fontcolor="#dddddd"];
-    edge [color="#666666" fontcolor="#aaaaaa" fontname="Helvetica" fontsize=9];
+	node [fontname="Helvetica" fontsize=10 shape=box style="filled,rounded" fillcolor="#ffffff" color="#d8d7d2" fontcolor="#3a3a38" penwidth=1];
+	edge [color="#9c9b95" fontcolor="#6b6a66" fontname="Helvetica" fontsize=9 arrowsize=0.7 penwidth=1];
 
-    // ── START ─────────────────────────────────────────────────
+	// ── START ─────────────────────────────────────────────────
 
-    accept [label="1. accept()\nnew TCP connection" fillcolor="#1e3a5f" fontcolor="#ffffff" shape=cds];
-    transport_new [label="2. transport_new(cfd)\nwrap fd in Transport" fillcolor="#2d2d2d"];
-    peer_addr [label="3. peer_addr()\nget client IP:port" fillcolor="#2d2d2d"];
-    ratelimit_check [label="4. ratelimit_accept()\ncheck per-IP limit" fillcolor="#5a3e1a" fontcolor="#ffffff"];
-    thread_dispatch [label="5. thread_pool_submit()\ndispatch to worker" fillcolor="#5a3e1a" fontcolor="#ffffff"];
+	accept [label="1. accept()\nnew TCP connection" fillcolor="#e8f0fc" color="#1e50a2" fontcolor="#1e50a2" shape=cds];
+	transport_new [label="2. transport_new(cfd)\nwrap fd, TCP_NODELAY" fillcolor="#ffffff" color="#d8d7d2" fontcolor="#6b6a66"];
+	peer_addr [label="3. peer_addr()\nget client IP:port" fillcolor="#ffffff" color="#d8d7d2" fontcolor="#6b6a66"];
+	ratelimit_check [label="4. ratelimit_accept()\ndynamic hash table" fillcolor="#faeeda" color="#854f0b" fontcolor="#854f0b"];
+	thread_dispatch [label="5. thread_pool_submit()\ndispatch to worker" fillcolor="#faeeda" color="#854f0b" fontcolor="#854f0b"];
 
-    // ── WORKER ────────────────────────────────────────────────
+	// ── WORKER ────────────────────────────────────────────────
 
-    subgraph cluster_worker {
-        label="Worker Thread (handle_client)";
-        style="filled,dashed";
-        color="#444444";
-        fillcolor="#1a1a1a";
-        fontcolor="#aaaaaa";
-        fontsize=12;
+	subgraph cluster_worker {
+		label="Worker Thread (handle_client)";
+		style="filled,dashed";
+		color="#dedcd6";
+		fillcolor="#f6f5f2";
+		fontcolor="#8a8983";
+		fontsize=12;
 
-        parse_request [label="6. http_parse_request()\nread headers until \\r\\n\\r\\n\nparse method, path, headers" fillcolor="#1a4a3a" fontcolor="#ffffff"];
+		parse_request [label="6. http_parse_request()\nbuffered read (4KB chunks)\nparse method, path, headers" fillcolor="#e1f5ee" color="#0f6e56" fontcolor="#0f6e56"];
 
-        decision1 [label="7. Decide path" shape=diamond fillcolor="#3a3a1a" fontcolor="#ffffff"];
+		decision1 [label="7. Decide path" shape=diamond fillcolor="#faf6d8" color="#8a7a0f" fontcolor="#8a7a0f"];
 
-        subgraph cluster_auth {
-            label="Auth Check";
-            style="filled";
-            color="#444444";
-            fillcolor="#1a1a1a";
-            fontcolor="#aaaaaa";
-            auth_check [label="8a. auth_check()\ndecode Base64\ncompare user:pass" fillcolor="#1a4a3a" fontcolor="#ffffff"];
-            auth_401 [label="8b. auth_send_challenge()\n401 + WWW-Authenticate" fillcolor="#6a2a2a" fontcolor="#ffffff"];
-        }
+		subgraph cluster_auth {
+			label="Auth Check";
+			style="filled";
+			color="#dedcd6";
+			fillcolor="#f6f5f2";
+			fontcolor="#8a8983";
+			auth_check [label="8a. auth_check()\ndecode Base64\ncompare user:pass" fillcolor="#f3e8fc" color="#6b21a8" fontcolor="#6b21a8"];
+			auth_401 [label="8b. auth_send_challenge()\n401 + WWW-Authenticate" fillcolor="#fce8e8" color="#a12626" fontcolor="#a12626"];
+		}
 
-        subgraph cluster_sse {
-            label="SSE (if path=/livereload)";
-            style="filled";
-            color="#444444";
-            fillcolor="#1a1a1a";
-            fontcolor="#aaaaaa";
-            sse_headers [label="9a. Send SSE headers\nevent-stream, no-cache" fillcolor="#2a4a3a" fontcolor="#ffffff"];
-            sse_register [label="9b. lr_add_client()\nregister in 256-slot table" fillcolor="#2a4a3a" fontcolor="#ffffff"];
-            sse_heartbeat [label="9c. Heartbeat loop\nevery 15s" fillcolor="#2a4a3a" fontcolor="#ffffff"];
-        }
+		subgraph cluster_sse {
+			label="SSE (if path=/livereload)";
+			style="filled";
+			color="#dedcd6";
+			fillcolor="#f6f5f2";
+			fontcolor="#8a8983";
+			sse_headers [label="9a. Send SSE headers\nevent-stream, no-cache" fillcolor="#dff5f2" color="#0f7a6e" fontcolor="#0f7a6e"];
+			sse_register [label="9b. lr_add_client()\nhash map registry" fillcolor="#dff5f2" color="#0f7a6e" fontcolor="#0f7a6e"];
+			sse_heartbeat [label="9c. Heartbeat loop\nevery 15s" fillcolor="#dff5f2" color="#0f7a6e" fontcolor="#0f7a6e"];
+		}
 
-        subgraph cluster_serve {
-            label="File Serving";
-            style="filled";
-            color="#444444";
-            fillcolor="#1a1a1a";
-            fontcolor="#aaaaaa";
-            method_check [label="10a. Method check\nGET/HEAD only?" shape=diamond fillcolor="#3a3a1a" fontcolor="#ffffff"];
-            safe_path [label="10b. safe_path()\nresolve against root\nreject traversal" fillcolor="#4a1a3a" fontcolor="#ffffff"];
-            dir_check [label="10c. Directory?\nindex.html? trailing /?" shape=diamond fillcolor="#3a3a1a" fontcolor="#ffffff"];
-            stat_file [label="10d. stat() + ETag\ngenerate mtime-size" fillcolor="#4a1a3a" fontcolor="#ffffff"];
-            conditional [label="10e. Conditional GET?\nIf-None-Match?\nIf-Modified-Since?" shape=diamond fillcolor="#3a3a1a" fontcolor="#ffffff"];
-            range_check [label="10f. Range request?" shape=diamond fillcolor="#3a3a1a" fontcolor="#ffffff"];
-            read_file [label="10g. open() + read()\nseek for ranges" fillcolor="#4a1a3a" fontcolor="#ffffff"];
-            lr_inject [label="10h. Inject live-reload\n<script> before </body>" fillcolor="#4a1a3a" fontcolor="#ffffff"];
-            response_send [label="10i. response_send()\nheaders + body" fillcolor="#1a4a3a" fontcolor="#ffffff"];
-        }
+		subgraph cluster_serve {
+			label="File Serving (Optimized)";
+			style="filled";
+			color="#dedcd6";
+			fillcolor="#f6f5f2";
+			fontcolor="#8a8983";
+			method_check [label="10a. Method check\nGET/HEAD only?" shape=diamond fillcolor="#faf6d8" color="#8a7a0f" fontcolor="#8a7a0f"];
+			safe_path [label="10b. safe_path()\ncached realpath(root)\nreject traversal" fillcolor="#f3e8fc" color="#6b21a8" fontcolor="#6b21a8"];
+			dir_check [label="10c. Directory?\nindex.html? trailing /?" shape=diamond fillcolor="#faf6d8" color="#8a7a0f" fontcolor="#8a7a0f"];
+			stat_file [label="10d. stat() + ETag\nhand-rolled hex format" fillcolor="#f3e8fc" color="#6b21a8" fontcolor="#6b21a8"];
+			conditional [label="10e. Conditional GET?\nIf-None-Match?\nIf-Modified-Since?" shape=diamond fillcolor="#faf6d8" color="#8a7a0f" fontcolor="#8a7a0f"];
+			range_check [label="10f. Range request?" shape=diamond fillcolor="#faf6d8" color="#8a7a0f" fontcolor="#8a7a0f"];
 
-        decision2 [label="11. keep_alive?" shape=diamond fillcolor="#3a3a1a" fontcolor="#ffffff"];
-        set_timeout [label="12. transport_set_timeout()" fillcolor="#2d2d2d"];
-        cleanup [label="13. transport_destroy()\nratelimit_leave()\nfree(job)" fillcolor="#6a2a2a" fontcolor="#ffffff"];
-    }
+			read_file [label="10g. open() + read()\nthread-local buffer\nsendfile() on Linux" fillcolor="#f3e8fc" color="#6b21a8" fontcolor="#6b21a8"];
+			lr_inject [label="10h. Inject live-reload\nsingle-pass </body> scan" fillcolor="#f3e8fc" color="#6b21a8" fontcolor="#6b21a8"];
+			build_headers [label="10i. header_cache_build()\npre-computed Date/Server" fillcolor="#e1f5ee" color="#0f6e56" fontcolor="#0f6e56"];
+			writev_send [label="10j. transport_writev()\nheader + body in 1 syscall" fillcolor="#e1f5ee" color="#0f6e56" fontcolor="#0f6e56"];
+		}
+	}
 
-    // ── Edges ─────────────────────────────────────────────────
+	decision2 [label="11. keep_alive?" shape=diamond fillcolor="#faf6d8" color="#8a7a0f" fontcolor="#8a7a0f"];
+	set_timeout [label="12. transport_set_timeout()" fillcolor="#ffffff" color="#d8d7d2" fontcolor="#6b6a66"];
+	cleanup [label="13. transport_destroy()\nratelimit_leave()\nfree(job)" fillcolor="#fce8e8" color="#a12626" fontcolor="#a12626"];
 
-    accept -> transport_new;
-    transport_new -> peer_addr;
-    peer_addr -> ratelimit_check;
-    ratelimit_check -> thread_dispatch;
-    thread_dispatch -> parse_request;
+	// ── Edges ─────────────────────────────────────────────────
 
-    parse_request -> decision1;
+	accept -> transport_new;
+	transport_new -> peer_addr;
+	peer_addr -> ratelimit_check;
+	ratelimit_check -> thread_dispatch;
+	thread_dispatch -> parse_request;
 
-    // Auth branch
-    decision1 -> auth_check [label="creds configured"];
-    auth_check -> auth_401 [label="reject"];
-    auth_check -> decision1_2 [label="accept"];
-    // invisible node to merge back
-    decision1_2 [label="" shape=point width=0];
+	parse_request -> decision1;
 
-    // SSE branch
-    decision1 -> sse_headers [label="path=/livereload"];
-    sse_headers -> sse_register;
-    sse_register -> sse_heartbeat;
+	// Auth branch
+	decision1 -> auth_check [label="creds configured"];
+	auth_check -> auth_401 [label="reject"];
+	auth_check -> decision1_2 [label="accept"];
+	// invisible node to merge back
+	decision1_2 [label="" shape=point width=0 color="#c7c6c0"];
 
-    // File branch
-    decision1 -> method_check [label="normal request"];
-    method_check -> safe_path [label="GET/HEAD"];
-    method_check -> cleanup [label="OTHER → 405" style=dashed];
-    safe_path -> dir_check;
-    dir_check -> safe_path [label="no / → 301 redirect" style=dashed dir=back];
-    dir_check -> stat_file;
-    stat_file -> conditional;
-    conditional -> response_send [label="match → 304" style=dashed];
-    conditional -> range_check;
-    range_check -> lr_inject [label="is HTML\n&& LR enabled"];
-    range_check -> read_file [label="normal\n(or range)"];
-    lr_inject -> response_send;
-    read_file -> response_send;
+	// SSE branch
+	decision1 -> sse_headers [label="path=/livereload"];
+	sse_headers -> sse_register;
+	sse_register -> sse_heartbeat;
 
-    response_send -> decision2;
-    decision2 -> set_timeout [label="yes"];
-    decision2 -> cleanup [label="no"];
-    set_timeout -> parse_request [label="loop for next request"];
+	// File branch
+	decision1 -> method_check [label="normal request"];
+	method_check -> safe_path [label="GET/HEAD"];
+	method_check -> cleanup [label="OTHER → 405" style=dashed color="#c7c6c0"];
+	safe_path -> dir_check;
+	dir_check -> safe_path [label="no / → 301 redirect" style=dashed dir=back color="#c7c6c0"];
+	dir_check -> stat_file;
+	stat_file -> conditional;
+	conditional -> build_headers [label="match → 304" style=dashed color="#c7c6c0"];
+	conditional -> range_check;
+	range_check -> lr_inject [label="is HTML\n&& LR enabled"];
+	range_check -> read_file [label="normal\n(or range)"];
+	lr_inject -> build_headers;
+	read_file -> build_headers;
+	build_headers -> writev_send;
 
-    // Labels for error responses
-    auth_401 -> cleanup [style=dashed];
-    method_check -> method_405 [label="OTHER"];
-    method_405 [label="response error 405" fillcolor="#6a2a2a"];
-    method_405 -> cleanup [style=dashed];
+	writev_send -> decision2;
+	decision2 -> set_timeout [label="yes"];
+	decision2 -> cleanup [label="no"];
+	set_timeout -> parse_request [label="loop for next request"];
+
+	// Labels for error responses
+	auth_401 -> cleanup [style=dashed color="#c7c6c0"];
+	method_check -> method_405 [label="OTHER"];
+	method_405 [label="response error 405" fillcolor="#fce8e8" color="#a12626" fontcolor="#a12626"];
+	method_405 -> cleanup [style=dashed color="#c7c6c0"];
 }

@@ -18,11 +18,6 @@
 #include <stdbool.h>
 #include <stdio.h>
 
-#ifdef __cplusplus
-extern "C" {
-#endif  // __cplusplus
-
-
 // Log severity levels (lower number = higher priority)
 typedef enum {
 	LOG_LEVEL_ERROR  = 0,
@@ -31,7 +26,6 @@ typedef enum {
 	LOG_LEVEL_DEBUG  = 3
 } Log_level_t;
 
-
 // Logger initialisation.
 // May be called at any time from any thread; it is fully thread-safe.
 // Calling it more than once is valid (e.g. to rotate the log file).
@@ -39,8 +33,6 @@ typedef enum {
 // file_path: path to a log file to write to. If NULL, output goes to stderr.
 //            If file_path is not NULL, color output is disabled automatically
 //            (since log files are not TTYs).
-//
-// Link with -lpthread when using this logger.
 void log_init(const char *file_path);
 
 // Logger configuration
@@ -56,7 +48,6 @@ FILE *log_get_file(void);
 // and disabled when writing to a file.
 bool log_use_color(void);
 
-
 // Internal implementation — do not call directly.
 void log_record(
 	Log_level_t level,
@@ -68,14 +59,14 @@ void log_record(
 	...
 );
 
+// Shutdown logger and flush all messages
+void log_shutdown(void);
 
 /* --------------------------------------------------
  * Public logging macros
  * -------------------------------------------------- */
 
-
 #ifdef LOG_SHOW_SOURCE_LOCATION
-
 
 // Log with custom newline behaviour (0 = no newline, 1 = with newline)
 // Used internally; prefer LOG_ERROR / LOG_WARN / etc.
@@ -101,9 +92,7 @@ void log_record(
 #define LOG_DEBUG(...) \
 	log_record(LOG_LEVEL_DEBUG, __FILE__, __LINE__, __FUNCTION__, 1, __VA_ARGS__)
 
-
 #else
-
 
 #define LOG_CUSTOM(LOG_LEVEL, NEW_LINE, ...) \
 	log_record(LOG_LEVEL, 0, 0, 0, NEW_LINE, __VA_ARGS__)
@@ -126,13 +115,6 @@ void log_record(
 #define LOG_DEBUG(...) \
 	log_record(LOG_LEVEL_DEBUG, 0, 0, 0, 1, __VA_ARGS__)
 
-
 #endif  // LOG_SHOW_SOURCE_LOCATION
-
-
-#ifdef __cplusplus
-}
-#endif  // __cplusplus
-
 
 #endif  // _LOG_H_

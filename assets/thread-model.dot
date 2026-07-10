@@ -1,133 +1,146 @@
 digraph thread_model {
-    rankdir=LR;
-    bgcolor="#1a1a1a";
-    fontcolor="#dddddd";
-    fontname="Helvetica";
-    label="Thread Model";
-    labeljust=l;
-    fontsize=18;
-    pad=0.5;
-    nodesep=0.5;
-    ranksep=0.8;
+	rankdir=LR;
+	bgcolor="#fcfcfb";
+	fontcolor="#1a1a1a";
+	fontname="Helvetica";
+	label="Thread Model";
+	labeljust=l;
+	fontsize=18;
+	pad=0.4;
+	nodesep=0.5;
+	ranksep=0.8;
 
-    node [fontname="Helvetica" fontsize=10 shape=box style="filled,rounded" color="#444444" fontcolor="#dddddd"];
-    edge [color="#555555" fontcolor="#999999" fontname="Helvetica" fontsize=9];
+	node [fontname="Helvetica" fontsize=10 shape=box style="filled,rounded" color="#d8d7d2" fontcolor="#3a3a38"];
+	edge [color="#9c9b95" fontcolor="#6b6a66" fontname="Helvetica" fontsize=9 arrowsize=0.7 penwidth=1];
 
-    // ── Main Thread ───────────────────────────────────────────
+	// ── Main Thread ───────────────────────────────────────────
 
-    subgraph cluster_main {
-        label="Main Thread (process)";
-        style="filled,dashed";
-        color="#444444";
-        fillcolor="#1a1a1a";
-        fontcolor="#ffcc66";
-        fontsize=11;
+	subgraph cluster_main {
+		label="Main Thread (process)";
+		style="filled,dashed";
+		color="#dedcd6";
+		fillcolor="#f6f5f2";
+		fontcolor="#1e50a2";
+		fontsize=11;
 
-        main_thread [label=<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4" BGCOLOR="#2d2d2d">
-            <TR><TD BGCOLOR="#5a3e1a"><FONT COLOR="#ffffff"><B>Main Thread</B></FONT></TD></TR>
-            <TR><TD ALIGN="LEFT">parse CLI args (argp)</TD></TR>
-            <TR><TD ALIGN="LEFT">log_init()</TD></TR>
-            <TR><TD ALIGN="LEFT">make_listener()</TD></TR>
-            <TR><TD ALIGN="LEFT">livereload_start()</TD></TR>
-            <TR><TD ALIGN="LEFT">thread_pool_create()</TD></TR>
-            <TR><TD ALIGN="LEFT">accept() loop</TD></TR>
-            <TR><TD ALIGN="LEFT">submit ClientJob to pool</TD></TR>
-        </TABLE>> shape=plain];
-    }
+		main_thread [label=<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4" BGCOLOR="#ffffff" COLOR="#d8d7d2">
+			<TR><TD BGCOLOR="#e8f0fc" COLOR="#d8d7d2"><FONT COLOR="#1e50a2"><B>Main Thread</B></FONT></TD></TR>
+			<TR><TD ALIGN="LEFT"><FONT COLOR="#3a3a38">parse CLI args (argp)</FONT></TD></TR>
+			<TR><TD ALIGN="LEFT"><FONT COLOR="#3a3a38">log_init() → consumer thread</FONT></TD></TR>
+			<TR><TD ALIGN="LEFT"><FONT COLOR="#3a3a38">make_listener()</FONT></TD></TR>
+			<TR><TD ALIGN="LEFT"><FONT COLOR="#3a3a38">livereload_start()</FONT></TD></TR>
+			<TR><TD ALIGN="LEFT"><FONT COLOR="#3a3a38">thread_pool_create()</FONT></TD></TR>
+			<TR><TD ALIGN="LEFT"><FONT COLOR="#3a3a38">accept() loop</FONT></TD></TR>
+			<TR><TD ALIGN="LEFT"><FONT COLOR="#3a3a38">submit ClientJob to pool</FONT></TD></TR>
+		</TABLE>> shape=plain];
+	}
 
-    // ── Thread Pool ───────────────────────────────────────────
+	// ── Thread Pool ───────────────────────────────────────────
 
-    subgraph cluster_pool {
-        label="Thread Pool (configurable, default 4)";
-        style="filled,dashed";
-        color="#444444";
-        fillcolor="#1a1a1a";
-        fontcolor="#ffcc66";
-        fontsize=11;
+	subgraph cluster_pool {
+		label="Thread Pool (configurable, default 4)";
+		style="filled,dashed";
+		color="#dedcd6";
+		fillcolor="#f6f5f2";
+		fontcolor="#854f0b";
+		fontsize=11;
 
-        worker1 [label=<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="3" BGCOLOR="#2d2d2d">
-            <TR><TD BGCOLOR="#3d2b1a"><FONT COLOR="#ffffff"><B>Worker 1</B></FONT></TD></TR>
-            <TR><TD ALIGN="LEFT">pull task from queue</TD></TR>
-            <TR><TD ALIGN="LEFT">handle_client()</TD></TR>
-            <TR><TD ALIGN="LEFT">keep-alive loop</TD></TR>
-        </TABLE>> shape=plain];
+		worker1 [label=<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="3" BGCOLOR="#ffffff" COLOR="#d8d7d2">
+			<TR><TD BGCOLOR="#faeeda" COLOR="#d8d7d2"><FONT COLOR="#854f0b"><B>Worker 1</B></FONT></TD></TR>
+			<TR><TD ALIGN="LEFT"><FONT COLOR="#3a3a38">pull task from queue</FONT></TD></TR>
+			<TR><TD ALIGN="LEFT"><FONT COLOR="#3a3a38">handle_client()</FONT></TD></TR>
+			<TR><TD ALIGN="LEFT"><FONT COLOR="#3a3a38">keep-alive loop</FONT></TD></TR>
+			<TR><TD ALIGN="LEFT"><FONT COLOR="#3a3a38">TLS buffer reuse</FONT></TD></TR>
+		</TABLE>> shape=plain];
 
-        worker2 [label=<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="3" BGCOLOR="#2d2d2d">
-            <TR><TD BGCOLOR="#3d2b1a"><FONT COLOR="#ffffff"><B>Worker 2</B></FONT></TD></TR>
-            <TR><TD ALIGN="LEFT">pull task from queue</TD></TR>
-            <TR><TD ALIGN="LEFT">handle_client()</TD></TR>
-            <TR><TD ALIGN="LEFT">keep-alive loop</TD></TR>
-        </TABLE>> shape=plain];
+		worker2 [label=<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="3" BGCOLOR="#ffffff" COLOR="#d8d7d2">
+			<TR><TD BGCOLOR="#faeeda" COLOR="#d8d7d2"><FONT COLOR="#854f0b"><B>Worker 2</B></FONT></TD></TR>
+			<TR><TD ALIGN="LEFT"><FONT COLOR="#3a3a38">pull task from queue</FONT></TD></TR>
+			<TR><TD ALIGN="LEFT"><FONT COLOR="#3a3a38">handle_client()</FONT></TD></TR>
+			<TR><TD ALIGN="LEFT"><FONT COLOR="#3a3a38">keep-alive loop</FONT></TD></TR>
+			<TR><TD ALIGN="LEFT"><FONT COLOR="#3a3a38">TLS buffer reuse</FONT></TD></TR>
+		</TABLE>> shape=plain];
 
-        worker_dots [label="..." fillcolor="#2d2d2d" shape=plain fontsize=14];
+		worker_dots [label="..." fillcolor="none" color="none" shape=plain fontsize=14 fontcolor="#9c9b95"];
 
-        workerN [label=<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="3" BGCOLOR="#2d2d2d">
-            <TR><TD BGCOLOR="#3d2b1a"><FONT COLOR="#ffffff"><B>Worker N</B></FONT></TD></TR>
-            <TR><TD ALIGN="LEFT">pull task from queue</TD></TR>
-            <TR><TD ALIGN="LEFT">handle_client()</TD></TR>
-            <TR><TD ALIGN="LEFT">keep-alive loop</TD></TR>
-        </TABLE>> shape=plain];
+		workerN [label=<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="3" BGCOLOR="#ffffff" COLOR="#d8d7d2">
+			<TR><TD BGCOLOR="#faeeda" COLOR="#d8d7d2"><FONT COLOR="#854f0b"><B>Worker N</B></FONT></TD></TR>
+			<TR><TD ALIGN="LEFT"><FONT COLOR="#3a3a38">pull task from queue</FONT></TD></TR>
+			<TR><TD ALIGN="LEFT"><FONT COLOR="#3a3a38">handle_client()</FONT></TD></TR>
+			<TR><TD ALIGN="LEFT"><FONT COLOR="#3a3a38">keep-alive loop</FONT></TD></TR>
+			<TR><TD ALIGN="LEFT"><FONT COLOR="#3a3a38">TLS buffer reuse</FONT></TD></TR>
+		</TABLE>> shape=plain];
 
-        shared_queue [label=<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4" BGCOLOR="#1e3a5f">
-            <TR><TD BGCOLOR="#1e3a5f"><FONT COLOR="#ffffff"><B>Work Queue</B></FONT></TD></TR>
-            <TR><TD ALIGN="LEFT">circular buffer (4096 slots)</TD></TR>
-            <TR><TD ALIGN="LEFT">mutex + 2 condvars</TD></TR>
-            <TR><TD ALIGN="LEFT">queued: ClientJob*</TD></TR>
-        </TABLE>> shape=plain];
-    }
+		shared_queue [label=<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4" BGCOLOR="#ffffff" COLOR="#d8d7d2">
+			<TR><TD BGCOLOR="#e8f0fc" COLOR="#d8d7d2"><FONT COLOR="#1e50a2"><B>Work Queue</B></FONT></TD></TR>
+			<TR><TD ALIGN="LEFT"><FONT COLOR="#3a3a38">circular buffer (4096 slots)</FONT></TD></TR>
+			<TR><TD ALIGN="LEFT"><FONT COLOR="#3a3a38">mutex + 2 condvars</FONT></TD></TR>
+			<TR><TD ALIGN="LEFT"><FONT COLOR="#3a3a38">queued: ClientJob*</FONT></TD></TR>
+		</TABLE>> shape=plain];
+	}
 
-    // ── Dedicated Threads ─────────────────────────────────────
+	// ── Dedicated Threads ─────────────────────────────────────
 
-    subgraph cluster_dedicated {
-        label="Dedicated Threads";
-        style="filled,dashed";
-        color="#444444";
-        fillcolor="#1a1a1a";
-        fontcolor="#ffcc66";
-        fontsize=11;
+	subgraph cluster_dedicated {
+		label="Dedicated Threads";
+		style="filled,dashed";
+		color="#dedcd6";
+		fillcolor="#f6f5f2";
+		fontcolor="#0f7a6e";
+		fontsize=11;
 
-        watcher_thread [label=<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="3" BGCOLOR="#2d2d2d">
-            <TR><TD BGCOLOR="#2a4a3a"><FONT COLOR="#ffffff"><B>Watcher Thread</B></FONT></TD></TR>
-            <TR><TD ALIGN="LEFT">inotify or poll</TD></TR>
-            <TR><TD ALIGN="LEFT">select() on events</TD></TR>
-            <TR><TD ALIGN="LEFT">calls on_change()</TD></TR>
-        </TABLE>> shape=plain];
+		watcher_thread [label=<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="3" BGCOLOR="#ffffff" COLOR="#d8d7d2">
+			<TR><TD BGCOLOR="#dff5f2" COLOR="#d8d7d2"><FONT COLOR="#0f7a6e"><B>Watcher Thread</B></FONT></TD></TR>
+			<TR><TD ALIGN="LEFT"><FONT COLOR="#3a3a38">inotify or poll</FONT></TD></TR>
+			<TR><TD ALIGN="LEFT"><FONT COLOR="#3a3a38">select() on events</FONT></TD></TR>
+			<TR><TD ALIGN="LEFT"><FONT COLOR="#3a3a38">calls on_change()</FONT></TD></TR>
+		</TABLE>> shape=plain];
 
-        sse1 [label=<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="3" BGCOLOR="#2d2d2d">
-            <TR><TD BGCOLOR="#2a4a3a"><FONT COLOR="#ffffff"><B>SSE Client A</B></FONT></TD></TR>
-            <TR><TD ALIGN="LEFT">dedicated pthread</TD></TR>
-            <TR><TD ALIGN="LEFT">heartbeat every 15s</TD></TR>
-            <TR><TD ALIGN="LEFT">reads no data</TD></TR>
-        </TABLE>> shape=plain];
+		log_consumer [label=<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="3" BGCOLOR="#ffffff" COLOR="#d8d7d2">
+			<TR><TD BGCOLOR="#faf6d8" COLOR="#d8d7d2"><FONT COLOR="#8a7a0f"><B>Log Consumer</B></FONT></TD></TR>
+			<TR><TD ALIGN="LEFT"><FONT COLOR="#3a3a38">drains lock-free ring</FONT></TD></TR>
+			<TR><TD ALIGN="LEFT"><FONT COLOR="#3a3a38">raw fwrite() batch</FONT></TD></TR>
+			<TR><TD ALIGN="LEFT"><FONT COLOR="#3a3a38">1 fflush() per batch</FONT></TD></TR>
+		</TABLE>> shape=plain];
 
-        sse2 [label=<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="3" BGCOLOR="#2d2d2d">
-            <TR><TD BGCOLOR="#2a4a3a"><FONT COLOR="#ffffff"><B>SSE Client B</B></FONT></TD></TR>
-            <TR><TD ALIGN="LEFT">dedicated pthread</TD></TR>
-            <TR><TD ALIGN="LEFT">heartbeat every 15s</TD></TR>
-            <TR><TD ALIGN="LEFT">reads no data</TD></TR>
-        </TABLE>> shape=plain];
-    }
+		sse1 [label=<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="3" BGCOLOR="#ffffff" COLOR="#d8d7d2">
+			<TR><TD BGCOLOR="#dff5f2" COLOR="#d8d7d2"><FONT COLOR="#0f7a6e"><B>SSE Client A</B></FONT></TD></TR>
+			<TR><TD ALIGN="LEFT"><FONT COLOR="#3a3a38">dedicated pthread</FONT></TD></TR>
+			<TR><TD ALIGN="LEFT"><FONT COLOR="#3a3a38">heartbeat every 15s</FONT></TD></TR>
+			<TR><TD ALIGN="LEFT"><FONT COLOR="#3a3a38">reads no data</FONT></TD></TR>
+		</TABLE>> shape=plain];
 
-    // ── Edges ─────────────────────────────────────────────────
+		sse2 [label=<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="3" BGCOLOR="#ffffff" COLOR="#d8d7d2">
+			<TR><TD BGCOLOR="#dff5f2" COLOR="#d8d7d2"><FONT COLOR="#0f7a6e"><B>SSE Client B</B></FONT></TD></TR>
+			<TR><TD ALIGN="LEFT"><FONT COLOR="#3a3a38">dedicated pthread</FONT></TD></TR>
+			<TR><TD ALIGN="LEFT"><FONT COLOR="#3a3a38">heartbeat every 15s</FONT></TD></TR>
+			<TR><TD ALIGN="LEFT"><FONT COLOR="#3a3a38">reads no data</FONT></TD></TR>
+		</TABLE>> shape=plain];
+	}
 
-    main_thread -> shared_queue [label="submit()" color="#88cc88"];
-    main_thread -> watcher_thread [label="watcher_start()" color="#88cc88" style=dashed];
-    shared_queue -> worker1 [label="dequeue" dir=both color="#88cc88"];
-    shared_queue -> worker2 [label="dequeue" dir=both color="#88cc88"];
-    shared_queue -> workerN [label="dequeue" dir=both color="#88cc88"];
+	// ── Edges ─────────────────────────────────────────────────
 
-    worker1 -> sse1 [label="SSE client detected\npthread_create()+detach" color="#8888cc" style=dashed];
-    worker2 -> sse2 [label="SSE client detected\npthread_create()+detach" color="#8888cc" style=dashed];
+	main_thread -> shared_queue [label="submit()" color="#0f6e56"];
+	main_thread -> watcher_thread [label="watcher_start()" color="#0f6e56" style=dashed];
+	main_thread -> log_consumer [label="log_init() spawns" color="#8a7a0f" style=dashed];
+	shared_queue -> worker1 [label="dequeue" dir=both color="#0f6e56"];
+	shared_queue -> worker2 [label="dequeue" dir=both color="#0f6e56"];
+	shared_queue -> workerN [label="dequeue" dir=both color="#0f6e56"];
 
-    // ── Annotations ───────────────────────────────────────────
+	worker1 -> sse1 [label="SSE client detected\npthread_create()+detach" color="#6b21a8" style=dashed];
+	worker2 -> sse2 [label="SSE client detected\npthread_create()+detach" color="#6b21a8" style=dashed];
 
-    note [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="4" CELLPADDING="6">
-        <TR><TD><FONT COLOR="#ffcc66"><B>Key Properties</B></FONT></TD></TR>
-        <TR><TD ALIGN="LEFT">1. Accept never blocks workers</TD></TR>
-        <TR><TD ALIGN="LEFT">2. Each SSE client = 1 pthread</TD></TR>
-        <TR><TD ALIGN="LEFT">3. SSE threads are detached</TD></TR>
-        <TR><TD ALIGN="LEFT">4. Watcher is 1 thread total</TD></TR>
-        <TR><TD ALIGN="LEFT">5. Queue full → accept() blocks (!)</TD></TR>
-        <TR><TD ALIGN="LEFT">6. g_shutdown atomic kills all loops</TD></TR>
-    </TABLE>> shape=plain fillcolor="none"];
+	// ── Annotations ───────────────────────────────────────────
+
+	note [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="4" CELLPADDING="6">
+		<TR><TD><FONT COLOR="#854f0b"><B>Key Properties</B></FONT></TD></TR>
+		<TR><TD ALIGN="LEFT"><FONT COLOR="#6b6a66">1. Accept never blocks workers</FONT></TD></TR>
+		<TR><TD ALIGN="LEFT"><FONT COLOR="#6b6a66">2. Each SSE client = 1 pthread</FONT></TD></TR>
+		<TR><TD ALIGN="LEFT"><FONT COLOR="#6b6a66">3. SSE threads are detached</FONT></TD></TR>
+		<TR><TD ALIGN="LEFT"><FONT COLOR="#6b6a66">4. Watcher is 1 thread total</FONT></TD></TR>
+		<TR><TD ALIGN="LEFT"><FONT COLOR="#6b6a66">5. Log consumer = 1 thread</FONT></TD></TR>
+		<TR><TD ALIGN="LEFT"><FONT COLOR="#6b6a66">6. Queue full → accept() blocks (!)</FONT></TD></TR>
+		<TR><TD ALIGN="LEFT"><FONT COLOR="#6b6a66">7. g_shutdown atomic kills all loops</FONT></TD></TR>
+		<TR><TD ALIGN="LEFT"><FONT COLOR="#6b6a66">8. Workers reuse TLS buffers</FONT></TD></TR>
+	</TABLE>> shape=plain fillcolor="none"];
 }

@@ -15,31 +15,7 @@
 #include "log.h"
 #include "project_config.h"
 #include "transport.h"
-
-// Write len bytes, looping to handle partial writes
-// Returns the number of bytes actually written
-static size_t write_all(Transport *t, const char *buf, size_t len)
-{
-	size_t written = 0;
-	while (written < len) {
-		ssize_t n = transport_write(t, buf + written, len - written);
-		if (n <= 0) {
-			LOG_PERROR("write failed on fd=%d after %zu/%zu bytes", transport_fd(t), written, len);
-			break;
-		}
-		written += (size_t) n;
-	}
-	return written;
-}
-
-// Format the current time as an RFC 1123 date string (for Date header)
-static void rfc1123_date(char *buf, size_t len)
-{
-	time_t    now = time(NULL);
-	struct tm tm;
-	gmtime_r(&now, &tm);
-	strftime(buf, len, "%a, %d %b %Y %H:%M:%S GMT", &tm);
-}
+#include "header_cache.h"
 
 // Send a complete HTTP response with headers and optional body
 void response_send(Transport  *t,
@@ -52,43 +28,39 @@ void response_send(Transport  *t,
                    int         keep_alive,
                    int         send_body)
 {
-	char date[64];
-	rfc1123_date(date, sizeof date);
-
-	const char *conn = keep_alive ? "Connection: keep-alive\r\n" : "Connection: close\r\n";
-
-	// Build the full response header block
 	char hdr[4096];
-	int  hdr_len = snprintf(hdr,
-                            sizeof hdr,
-                            "HTTP/1.1 %d %s\r\n"
-	                        "Date: %s\r\n"
-	                        "Server: " MAIN_BINARY "/" PROJECT_VERSION "\r\n"
-	                        "%s%s%s"            // Content-Type header (if mime provided)
-	                        "Content-Length: %zu\r\n"
-	                        "%s"                // extra headers (e.g. ETag, Location)
-	                        "%s"                // Connection header
-	                        "\r\n",
-                            status,
-                            status_text,
-                            date,
-                            mime ? "Content-Type: " : "",
-                            mime ? mime : "",
-                            mime ? "\r\n" : "",
-                            body_len,
-                            extra_hdrs ? extra_hdrs : "",
-                            conn);
+	int  hdr_len;
 
-	LOG_DEBUG("HTTP %d %s → fd=%d (%d header + %zu body bytes)",
-	          status,
-	          status_text,
-	          transport_fd(t),
-	          hdr_len,
-	          body_len);
-	if ((size_t)hdr_len > sizeof(hdr)) hdr_len = (int)sizeof(hdr);
-	write_all(t, hdr, (size_t) hdr_len);
-	if (send_body && body && body_len > 0)
-		write_all(t, body, body_len);
+	if (mime) {
+		hdr_len = header_cache_build(hdr, sizeof hdr,
+		                             status, status_text,
+		                             mime, body_len,
+		                             extra_hdrs, keep_alive);
+	} else {
+		hdr_len = header_cache_build_no_type(hdr, sizeof hdr,
+		                                     status, status_text,
+		                                     body_len,
+		                                     extra_hdrs, keep_alive);
+	}
+
+	if (hdr_len < 0) {
+		LOG_ERROR("Header buffer too small");
+		return;
+	}
+
+	LOG_DEBUG("HTTP %d %s -> fd=%d (%d header + %zu body bytes)",
+	          status, status_text, transport_fd(t), hdr_len, body_len);
+
+	if (send_body && body && body_len > 0) {
+		// Use writev for single syscall
+		struct iovec iov[2] = {
+			{ .iov_base = hdr, .iov_len = (size_t)hdr_len },
+			{ .iov_base = (void *)body, .iov_len = body_len }
+		};
+		transport_writev(t, iov, 2);
+	} else {
+		transport_write(t, hdr, (size_t) hdr_len);
+	}
 }
 
 // Send an error page with a styled HTML body (status + detail message)
@@ -97,9 +69,9 @@ void response_error(Transport *t, int status, const char *status_text, const cha
 {
 	char body[4096];
 	int  blen = snprintf(
-        body,
-        sizeof(body),
-        "<!DOCTYPE html>"
+	    body,
+	    sizeof(body),
+	    "<!DOCTYPE html>"
 	     "<html lang='en'>"
 	     "<head>"
 	     "<meta charset='utf-8'>"
@@ -179,11 +151,11 @@ void response_error(Transport *t, int status, const char *status_text, const cha
 	     "</div>"
 	     "</body>"
 	     "</html>",
-        status,
-        status_text,
-        status,
-        status_text,
-        detail ? detail : "An unexpected error occurred.");
+	    status,
+	    status_text,
+	    status,
+	    status_text,
+	    detail ? detail : "An unexpected error occurred.");
 
 	if ((size_t)blen > sizeof(body)) blen = (int)sizeof(body);
 	LOG_DEBUG("Sending error response: %d %s — %s", status, status_text, detail ? detail : "");

@@ -125,6 +125,68 @@ typedef struct PollEntry {
 	time_t mtime;
 } PollEntry;
 
+// Simple open-addressing hash map: path → mtime for O(1) lookups during diff
+#define PMAP_SIZE 4096
+typedef struct PollMap {
+	char   keys[PMAP_SIZE][64]; // short hash keys for fast comparison
+	time_t vals[PMAP_SIZE];
+	int    used[PMAP_SIZE];
+} PollMap;
+
+static void pmap_clear(PollMap *m)
+{
+	memset(m->used, 0, sizeof(m->used));
+}
+
+static unsigned pmap_hash(const char *s)
+{
+	unsigned h = 5381;
+	for (; *s; s++)
+		h = h * 33 + (unsigned char)*s;
+	return h;
+}
+
+static void pmap_insert(PollMap *m, const char *path, time_t mt)
+{
+	unsigned idx = pmap_hash(path) & (PMAP_SIZE - 1);
+	// Store first 63 chars of basename as key for comparison
+	const char *base = strrchr(path, '/');
+	base = base ? base + 1 : path;
+	char k[64];
+	snprintf(k, sizeof k, "%s", base);
+	for (int i = 0; i < PMAP_SIZE; i++) {
+		unsigned slot = (idx + (unsigned)i) & (PMAP_SIZE - 1);
+		if (!m->used[slot]) {
+			memcpy(m->keys[slot], k, sizeof(m->keys[slot]));
+			m->vals[slot] = mt;
+			m->used[slot] = 1;
+			return;
+		}
+		if (strcmp(m->keys[slot], k) == 0) {
+			m->vals[slot] = mt;
+			return;
+		}
+	}
+}
+
+static int pmap_get(PollMap *m, const char *path, time_t *out_mt)
+{
+	const char *base = strrchr(path, '/');
+	base = base ? base + 1 : path;
+	char k[64];
+	snprintf(k, sizeof k, "%s", base);
+	unsigned idx = pmap_hash(path) & (PMAP_SIZE - 1);
+	for (int i = 0; i < PMAP_SIZE; i++) {
+		unsigned slot = (idx + (unsigned)i) & (PMAP_SIZE - 1);
+		if (!m->used[slot]) return 0;
+		if (strcmp(m->keys[slot], k) == 0) {
+			*out_mt = m->vals[slot];
+			return 1;
+		}
+	}
+	return 0;
+}
+
 // Poll state: dynamic array of entries
 typedef struct {
 	PollEntry *entries;
@@ -305,10 +367,16 @@ static void *poll_thread(void *arg)
 {
 	Watcher   *w = arg;
 	PollState  prev = {0}, curr = {0};
+	PollMap    pmap;
 
 	// Take the initial snapshot
 	poll_snapshot(&prev, w->root, w->ignore_hidden);
 	LOG_DEBUG("Poll watcher initial snapshot: %d entries", prev.count);
+
+	// Build initial hash map
+	pmap_clear(&pmap);
+	for (int i = 0; i < prev.count; i++)
+		pmap_insert(&pmap, prev.entries[i].path, prev.entries[i].mtime);
 
 	while (atomic_load_explicit(&w->running, memory_order_relaxed)) {
 		poll_sleep_ms(POLL_INTERVAL_MS, w->wake_rd);
@@ -318,27 +386,22 @@ static void *poll_thread(void *arg)
 		curr.count = 0;
 		poll_snapshot(&curr, w->root, w->ignore_hidden);
 
-		// Compare number of entries and per-file mtimes
+		// O(N) comparison using hash map: check new entries against prev map
 		int changed = (curr.count != prev.count);
 		if (!changed) {
 			for (int i = 0; i < curr.count && !changed; i++) {
-				int found = 0;
-				for (int j = 0; j < prev.count; j++) {
-					if (strcmp(curr.entries[i].path,
-							   prev.entries[j].path) == 0) {
-						found = 1;
-						if (curr.entries[i].mtime != prev.entries[j].mtime)
-							changed = 1;
-						break;
-					}
+				time_t prev_mt;
+				if (!pmap_get(&pmap, curr.entries[i].path, &prev_mt)) {
+					changed = 1; // new file not in previous snapshot
+				} else if (curr.entries[i].mtime != prev_mt) {
+					changed = 1; // mtime changed
 				}
-				if (!found) changed = 1;
 			}
 		}
 
 		if (changed && atomic_load_explicit(&w->running, memory_order_relaxed)) {
 			LOG_DEBUG("Poll watcher detected file change (curr=%d prev=%d)",
-					  curr.count, prev.count);
+			          curr.count, prev.count);
 			w->cb(NULL, w->userdata);
 		}
 
@@ -351,6 +414,11 @@ static void *poll_thread(void *arg)
 		curr.count     = 0;
 		curr.cap       = prev.cap;
 		if (curr.entries == NULL) curr.cap = 0;
+
+		// Rebuild hash map for next comparison
+		pmap_clear(&pmap);
+		for (int i = 0; i < prev.count; i++)
+			pmap_insert(&pmap, prev.entries[i].path, prev.entries[i].mtime);
 	}
 
 	free(prev.entries);
@@ -412,7 +480,7 @@ Watcher *watcher_create(const char   *root_dir,
 #endif  // __linux__
 
 	LOG_DEBUG("Watcher created for %s (poll=%d, ignore_hidden=%d)",
-			  root_dir, w->use_poll, ignore_hidden);
+	          root_dir, w->use_poll, ignore_hidden);
 	return w;
 }
 

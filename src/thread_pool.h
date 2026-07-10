@@ -9,6 +9,7 @@
 #ifndef _THREAD_POOL_H_
 #define _THREAD_POOL_H_
 
+
 #include <stddef.h>
 
 typedef void (*ThreadTaskFunc)(void *arg);
@@ -28,5 +29,6 @@ void thread_pool_submit(ThreadPool *pool, ThreadTaskFunc func, void *arg);
 
 // Stop all workers and free resources
 void thread_pool_destroy(ThreadPool *pool);
+
 
 #endif  // _THREAD_POOL_H_

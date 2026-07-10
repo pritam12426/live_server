@@ -5,6 +5,7 @@
 #ifndef _RESPONSE_H_
 #define _RESPONSE_H_
 
+
 #include <stddef.h>
 
 typedef struct Transport Transport;
@@ -29,5 +30,6 @@ void response_error(Transport *t, int status, const char *status_text, const cha
 void response_redirect(Transport *t, const char *location);
 
 // (SSE helpers live in livereload.h — not here)
+
 
 #endif  // _RESPONSE_H_
