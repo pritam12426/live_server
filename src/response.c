@@ -157,7 +157,7 @@ void response_error(Transport *t, int status, const char *status_text, const cha
 	    status_text,
 	    detail ? detail : "An unexpected error occurred.");
 
-	if ((size_t)blen > sizeof(body)) blen = (int)sizeof(body);
+	if ((size_t)blen > sizeof(body)) blen = (int)sizeof(body) - 1;
 	LOG_DEBUG("Sending error response: %d %s — %s", status, status_text, detail ? detail : "");
 	response_send(t, status, status_text, "text/html; charset=utf-8", NULL, body, (size_t) blen, 0, 1);
 }

@@ -9,6 +9,7 @@
 
 #include <errno.h>
 #include <limits.h>
+#include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <stdbool.h>
 #include <stdlib.h>

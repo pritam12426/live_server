@@ -95,8 +95,8 @@ int ratelimit_accept(RateLimit *rl, const char *ip)
 
 	pthread_mutex_lock(&rl->lock);
 
-	// Check load factor and grow if needed
-	if (rl->used >= rl->table_size * RL_MAX_LOAD_FACTOR) {
+	// Check load factor and grow if needed (using integer math to avoid float conversion)
+	if (rl->used * 4 >= rl->table_size * 3) {
 		if (ratelimit_grow(rl) != 0) {
 			LOG_WARN("Rate limit table grow failed, continuing with current size");
 		}
@@ -134,9 +134,9 @@ int ratelimit_accept(RateLimit *rl, const char *ip)
 		}
 	}
 
-	LOG_WARN("Rate limit table unexpectedly full, allowing %s", ip);
+	LOG_WARN("Rate limit table full, rejecting %s", ip);
 	pthread_mutex_unlock(&rl->lock);
-	return 0;
+	return -1;
 }
 
 void ratelimit_leave(RateLimit *rl, const char *ip)

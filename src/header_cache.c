@@ -12,6 +12,7 @@
 #include <time.h>
 #include <unistd.h>
 
+#include "log.h"
 #include "project_config.h"
 
 // Cached header components
@@ -31,6 +32,7 @@ static void header_cache_update_date(void)
 	gmtime_r(&now, &tm);
 	strftime(hc_date, sizeof hc_date,
 	         "Date: %a, %d %b %Y %H:%M:%S GMT\r\n", &tm);
+	LOG_DEBUG("Header cache Date updated: %.*s", (int)sizeof(hc_date) - 2, hc_date);
 }
 
 // Initialize static headers
@@ -39,6 +41,7 @@ void header_cache_init(void)
 	header_cache_update_date();
 	snprintf(hc_server, sizeof hc_server,
 	         "Server: " MAIN_BINARY "/" PROJECT_VERSION "\r\n");
+	LOG_INFO("Header cache initialized (Server: %s)", MAIN_BINARY "/" PROJECT_VERSION);
 }
 
 // Get cached Date header (updates once per second)
@@ -52,6 +55,7 @@ const char *header_cache_date(void)
 		if (now != last_update) {  // double-check
 			header_cache_update_date();
 			last_update = now;
+			LOG_DEBUG("Date header regenerated");
 		}
 		pthread_mutex_unlock(&hc_mutex);
 	}

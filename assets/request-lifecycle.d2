@@ -1,0 +1,191 @@
+direction: down
+title: "HTTP Request — Full Lifecycle (Optimized)"
+
+# ── START ─────────────────────────────────────────────────
+
+accept: {
+  label: "1. accept()\nnew TCP connection"
+  shape: oval
+  style: { fill: "#e8f0fc"; stroke: "#1e50a2"; font-color: "#1e50a2" }
+}
+
+transport_new: {
+  label: "2. transport_new(cfd)\nwrap fd, TCP_NODELAY"
+  style: { fill: "#ffffff"; stroke: "#d8d7d2"; font-color: "#6b6a66" }
+}
+
+peer_addr: {
+  label: "3. peer_addr()\nget client IP:port"
+  style: { fill: "#ffffff"; stroke: "#d8d7d2"; font-color: "#6b6a66" }
+}
+
+ratelimit_check: {
+  label: "4. ratelimit_accept()\ndynamic hash table"
+  style: { fill: "#faeeda"; stroke: "#854f0b"; font-color: "#854f0b" }
+}
+
+thread_dispatch: {
+  label: "5. thread_pool_submit()\ndispatch to worker"
+  style: { fill: "#faeeda"; stroke: "#854f0b"; font-color: "#854f0b" }
+}
+
+# ── WORKER ────────────────────────────────────────────────
+
+"Worker Thread (handle_client)": {
+  style: {
+	fill: "#f6f5f2"
+	stroke: "#dedcd6"
+	stroke-dash: 5
+	font-color: "#8a8983"
+	font-size: 12
+	opacity: 0.6
+  }
+
+  parse_request: {
+	label: "6. http_parse_request()\nbuffered read (4KB chunks)\nparse method, path, headers"
+	style: { fill: "#e1f5ee"; stroke: "#0f6e56"; font-color: "#0f6e56" }
+  }
+
+  decision1: {
+	label: "7. Decide path"
+	shape: diamond
+	style: { fill: "#faf6d8"; stroke: "#8a7a0f"; font-color: "#8a7a0f" }
+  }
+
+  "Auth Check": {
+	style: { fill: "#f6f5f2"; stroke: "#dedcd6"; font-color: "#8a8983"; font-size: 11 }
+
+	auth_check: {
+	  label: "8a. auth_check()\ndecode Base64\ncompare user:pass"
+	  style: { fill: "#f3e8fc"; stroke: "#6b21a8"; font-color: "#6b21a8" }
+	}
+	auth_401: {
+	  label: "8b. auth_send_challenge()\n401 + WWW-Authenticate"
+	  style: { fill: "#fce8e8"; stroke: "#a12626"; font-color: "#a12626" }
+	}
+  }
+
+  "SSE (if path=/livereload)": {
+	style: { fill: "#f6f5f2"; stroke: "#dedcd6"; font-color: "#8a8983"; font-size: 11 }
+
+	sse_headers: {
+	  label: "9a. Send SSE headers\nevent-stream, no-cache"
+	  style: { fill: "#dff5f2"; stroke: "#0f7a6e"; font-color: "#0f7a6e" }
+	}
+	sse_register: {
+	  label: "9b. lr_add_client()\nhash map registry"
+	  style: { fill: "#dff5f2"; stroke: "#0f7a6e"; font-color: "#0f7a6e" }
+	}
+	sse_heartbeat: {
+	  label: "9c. Heartbeat loop\nevery 15s"
+	  style: { fill: "#dff5f2"; stroke: "#0f7a6e"; font-color: "#0f7a6e" }
+	}
+  }
+
+  "File Serving (Optimized)": {
+	style: { fill: "#f6f5f2"; stroke: "#dedcd6"; font-color: "#8a8983"; font-size: 11 }
+
+	method_check: {
+	  label: "10a. Method check\nGET/HEAD only?"
+	  shape: diamond
+	  style: { fill: "#faf6d8"; stroke: "#8a7a0f"; font-color: "#8a7a0f" }
+	}
+	safe_path: {
+	  label: "10b. safe_path()\ncached realpath(root)\nreject traversal"
+	  style: { fill: "#f3e8fc"; stroke: "#6b21a8"; font-color: "#6b21a8" }
+	}
+	dir_check: {
+	  label: "10c. Directory?\nindex.html? trailing /?"
+	  shape: diamond
+	  style: { fill: "#faf6d8"; stroke: "#8a7a0f"; font-color: "#8a7a0f" }
+	}
+	stat_file: {
+	  label: "10d. stat() + ETag\nhand-rolled hex format"
+	  style: { fill: "#f3e8fc"; stroke: "#6b21a8"; font-color: "#6b21a8" }
+	}
+	conditional: {
+	  label: "10e. Conditional GET?\nIf-None-Match?\nIf-Modified-Since?"
+	  shape: diamond
+	  style: { fill: "#faf6d8"; stroke: "#8a7a0f"; font-color: "#8a7a0f" }
+	}
+	range_check: {
+	  label: "10f. Range request?"
+	  shape: diamond
+	  style: { fill: "#faf6d8"; stroke: "#8a7a0f"; font-color: "#8a7a0f" }
+	}
+
+	read_file: {
+	  label: "10g. open() + read()\nthread-local buffer\nsendfile() on Linux"
+	  style: { fill: "#f3e8fc"; stroke: "#6b21a8"; font-color: "#6b21a8" }
+	}
+	lr_inject: {
+	  label: "10h. Inject live-reload\nsingle-pass </body> scan"
+	  style: { fill: "#f3e8fc"; stroke: "#6b21a8"; font-color: "#6b21a8" }
+	}
+	build_headers: {
+	  label: "10i. header_cache_build()\npre-computed Date/Server"
+	  style: { fill: "#e1f5ee"; stroke: "#0f6e56"; font-color: "#0f6e56" }
+	}
+	writev_send: {
+	  label: "10j. transport_writev()\nheader + body in 1 syscall"
+	  style: { fill: "#e1f5ee"; stroke: "#0f6e56"; font-color: "#0f6e56" }
+	}
+  }
+}
+
+decision2: {
+  label: "11. keep_alive?"
+  shape: diamond
+  style: { fill: "#faf6d8"; stroke: "#8a7a0f"; font-color: "#8a7a0f" }
+}
+
+set_timeout: {
+  label: "12. transport_set_timeout()"
+  style: { fill: "#ffffff"; stroke: "#d8d7d2"; font-color: "#6b6a66" }
+}
+
+cleanup: {
+  label: "13. transport_destroy()\nratelimit_leave()\nfree(job)"
+  style: { fill: "#fce8e8"; stroke: "#a12626"; font-color: "#a12626" }
+}
+
+# ── Edges ─────────────────────────────────────────────────
+
+accept -> transport_new
+transport_new -> peer_addr
+peer_addr -> ratelimit_check
+ratelimit_check -> thread_dispatch
+thread_dispatch -> "Worker Thread (handle_client)".parse_request
+
+"Worker Thread (handle_client)".parse_request -> "Worker Thread (handle_client)".decision1
+
+# Auth branch
+"Worker Thread (handle_client)".decision1 -> "Worker Thread (handle_client)".Auth Check.auth_check: creds configured
+"Worker Thread (handle_client)".Auth Check.auth_check -> "Worker Thread (handle_client)".Auth Check.auth_401: reject
+"Worker Thread (handle_client)".Auth Check.auth_check -> cleanup: accept
+
+# SSE branch
+"Worker Thread (handle_client)".decision1 -> "Worker Thread (handle_client)".SSE (if path=/livereload).sse_headers: path=/livereload
+"Worker Thread (handle_client)".SSE (if path=/livereload).sse_headers -> "Worker Thread (handle_client)".SSE (if path=/livereload).sse_register
+"Worker Thread (handle_client)".SSE (if path=/livereload).sse_register -> "Worker Thread (handle_client)".SSE (if path=/livereload).sse_heartbeat
+
+# File branch
+"Worker Thread (handle_client)".decision1 -> "Worker Thread (handle_client)".File Serving (Optimized).method_check: normal request
+"Worker Thread (handle_client)".File Serving (Optimized).method_check -> "Worker Thread (handle_client)".File Serving (Optimized).safe_path: GET/HEAD
+"Worker Thread (handle_client)".File Serving (Optimized).method_check -> cleanup: OTHER → 405
+"Worker Thread (handle_client)".File Serving (Optimized).safe_path -> "Worker Thread (handle_client)".File Serving (Optimized).dir_check
+"Worker Thread (handle_client)".File Serving (Optimized).dir_check -> "Worker Thread (handle_client)".File Serving (Optimized).safe_path: no / → 301 redirect
+"Worker Thread (handle_client)".File Serving (Optimized).dir_check -> "Worker Thread (handle_client)".File Serving (Optimized).stat_file
+"Worker Thread (handle_client)".File Serving (Optimized).stat_file -> "Worker Thread (handle_client)".File Serving (Optimized).conditional
+"Worker Thread (handle_client)".File Serving (Optimized).conditional -> "Worker Thread (handle_client)".File Serving (Optimized).build_headers: match → 304
+"Worker Thread (handle_client)".File Serving (Optimized).conditional -> "Worker Thread (handle_client)".File Serving (Optimized).range_check
+"Worker Thread (handle_client)".File Serving (Optimized).range_check -> "Worker Thread (handle_client)".File Serving (Optimized).lr_inject: is HTML && LR enabled
+"Worker Thread (handle_client)".File Serving (Optimized).range_check -> "Worker Thread (handle_client)".File Serving (Optimized).read_file: normal or range
+"Worker Thread (handle_client)".File Serving (Optimized).lr_inject -> "Worker Thread (handle_client)".File Serving (Optimized).build_headers
+"Worker Thread (handle_client)".File Serving (Optimized).read_file -> "Worker Thread (handle_client)".File Serving (Optimized).build_headers
+"Worker Thread (handle_client)".File Serving (Optimized).build_headers -> "Worker Thread (handle_client)".File Serving (Optimized).writev_send
+
+"Worker Thread (handle_client)".File Serving (Optimized).writev_send -> decision2
+decision2 -> set_timeout: yes
+decision2 -> cleanup: no
+set_timeout -> "Worker Thread (handle_client)".parse_request: loop for next request

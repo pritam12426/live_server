@@ -286,7 +286,7 @@ void http_send_status(Transport *t, int code, const char *reason, const char *bo
 		"Connection: close\r\n"
 		"\r\n",
 		code, reason, body_len);
-	if ((size_t)n > sizeof(buf)) n = (int)sizeof(buf);
+	if ((size_t)n > sizeof(buf)) n = (int)sizeof(buf) - 1;
 	transport_write(t, buf, (size_t)n);
 	if (body && body_len)
 		transport_write(t, body, body_len);
@@ -303,6 +303,6 @@ void http_send_redirect(Transport *t, const char *location)
 		"Connection: close\r\n"
 		"\r\n",
 		location);
-	if ((size_t)n > sizeof(buf)) n = (int)sizeof(buf);
+	if ((size_t)n > sizeof(buf)) n = (int)sizeof(buf) - 1;
 	transport_write(t, buf, (size_t)n);
 }

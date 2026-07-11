@@ -11,8 +11,9 @@
 #include <unistd.h>
 
 #if defined(__linux__)
+#include "project_config.h"
 #include <sys/sendfile.h>
-#elif defined(__APPLE__) && defined(__MACH__)
+#elif defined(__APPLE__)
 // macOS has sendfile in sys/uio.h but with different signature
 #include <sys/uio.h>
 #endif
@@ -45,7 +46,8 @@ static char g_real_root[4096];
 
 static void file_serve_set_root(const char *root)
 {
-	realpath(root, g_real_root);
+	if (realpath(root, g_real_root) == NULL)
+		g_real_root[0] = '\0'; // reset on failure (POSIX leaves buffer undefined)
 }
 
 // Find </body> case-insensitively in a single pass
@@ -76,11 +78,12 @@ static const char *hex_digits = "0123456789abcdef";
 // Format: "mtime-hex-size-hex" (both lowercase hex)
 static void build_etag(const struct stat *st, char *buf, size_t len)
 {
-	(void)len; // buffer is at least 64 bytes
+	if (len < 4) { if (len) *buf = '\0'; return; }
 	unsigned long mtime = (unsigned long)st->st_mtime;
 	unsigned long size  = (unsigned long)st->st_size;
+	size_t pos = 0;
 
-	*buf++ = '"';
+	buf[pos++] = '"';
 
 	// Write mtime as hex (8 bytes for 32-bit, up to 16 for 64-bit)
 	char mtime_buf[16];
@@ -94,19 +97,20 @@ static void build_etag(const struct stat *st, char *buf, size_t len)
 			tmp[idx++] = hex_digits[mtime & 0xF];
 			mtime >>= 4;
 		}
-		// Reverse
 		while (idx > 0) {
 			mtime_buf[mtime_len++] = tmp[--idx];
 		}
 	}
-	memcpy(buf, mtime_buf, mtime_len);
-	buf += mtime_len;
+	if (pos + (size_t)mtime_len >= len) { buf[0] = '\0'; return; }
+	memcpy(buf + pos, mtime_buf, (size_t)mtime_len);
+	pos += (size_t)mtime_len;
 
-	*buf++ = '-';
+	if (pos >= len - 3) { buf[0] = '\0'; return; }
+	buf[pos++] = '-';
 
 	// Write size as hex
 	if (size == 0) {
-		*buf++ = '0';
+		buf[pos++] = '0';
 	} else {
 		char tmp[16];
 		int idx = 0;
@@ -114,13 +118,15 @@ static void build_etag(const struct stat *st, char *buf, size_t len)
 			tmp[idx++] = hex_digits[size & 0xF];
 			size >>= 4;
 		}
+		if (pos + (size_t)idx >= len) { buf[0] = '\0'; return; }
 		while (idx > 0) {
-			*buf++ = tmp[--idx];
+			buf[pos++] = tmp[--idx];
 		}
 	}
 
-	*buf++ = '"';
-	*buf = '\0';
+	if (pos >= len - 1) { buf[0] = '\0'; return; }
+	buf[pos++] = '"';
+	buf[pos] = '\0';
 }
 
 static void http_date(time_t t, char *buf, size_t len)
@@ -139,7 +145,7 @@ static void rfc1123_date(char *buf, size_t len)
 	gmtime_r(&now, &tm);
 	strftime(buf, len, "%a, %d %b %Y %H:%M:%S GMT", &tm);
 }
-#endif
+#endif  // __linux__
 
 static int safe_path(const char *root, const char *url_path, char *out, size_t out_len)
 {
@@ -405,6 +411,8 @@ static int send_file(Transport          *t,
 		                        file_size,
 		                        extra,
 		                        keep_alive ? "keep-alive" : "close");
+		if (hdr_len < 0 || (size_t)hdr_len >= sizeof hdr)
+			hdr_len = (int)(sizeof hdr - 1);
 
 		// Write header directly via transport
 		transport_write(t, hdr, (size_t)hdr_len);
@@ -422,7 +430,7 @@ static int send_file(Transport          *t,
 			log_request(client_ip, client_port, req, 200, (long long) sent, mime);
 		return 200;
 	}
-#endif
+#endif  // __linux__
 
 	// Fallback for range requests, HEAD, non-Linux, or if sendfile not used
 	if (range_first > 0)

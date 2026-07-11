@@ -11,6 +11,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "log.h"
+
 // Thread-local buffer state
 typedef struct {
 	char *body_buf;
@@ -25,6 +27,7 @@ static ThreadBuffers *get_tls_buffers(void)
 	if (!g_tls_buffers) {
 		g_tls_buffers = calloc(1, sizeof(ThreadBuffers));
 		if (!g_tls_buffers) return NULL;
+		LOG_DEBUG("TLS buffer state allocated for thread");
 	}
 	return g_tls_buffers;
 }
@@ -41,10 +44,14 @@ char *thread_buffer_get_body(size_t min_size)
 		while (new_cap < min_size) new_cap *= 2;
 
 		char *new_buf = realloc(tb->body_buf, new_cap);
-		if (!new_buf) return NULL;
+		if (!new_buf) {
+			LOG_ERROR("Failed to grow TLS body buffer to %zu bytes", new_cap);
+			return NULL;
+		}
 
 		tb->body_buf = new_buf;
 		tb->body_cap = new_cap;
+		LOG_DEBUG("TLS body buffer grown to %zu bytes", new_cap);
 	}
 	return tb->body_buf;
 }
@@ -53,6 +60,7 @@ char *thread_buffer_get_body(size_t min_size)
 void thread_buffer_cleanup(void)
 {
 	if (g_tls_buffers) {
+		LOG_DEBUG("Cleaning up TLS buffers (body cap: %zu)", g_tls_buffers->body_cap);
 		free(g_tls_buffers->body_buf);
 		free(g_tls_buffers);
 		g_tls_buffers = NULL;

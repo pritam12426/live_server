@@ -1,0 +1,192 @@
+direction: down
+title: "live-server — Module Architecture"
+
+# ── Clusters ──────────────────────────────────────────────
+
+"Entry & Config": {
+  style: {
+	fill: "#f6f5f2"
+	stroke: "#dedcd6"
+	stroke-dash: 5
+	font-color: "#8a8983"
+	font-size: 12
+	opacity: 0.6
+  }
+
+  main: {
+	label: "main.c\nargp CLI parser"
+	style: { fill: "#e8f0fc"; stroke: "#1e50a2"; font-color: "#1e50a2" }
+  }
+  project_config: {
+	label: "project_config.h\nVersion, name, URL"
+	style: { fill: "#ffffff"; stroke: "#d8d7d2"; font-color: "#6b6a66" }
+  }
+  types: {
+	label: "types.h\nLivereloadMode"
+	style: { fill: "#ffffff"; stroke: "#d8d7d2"; font-color: "#6b6a66" }
+  }
+}
+
+"Server Core": {
+  style: {
+	fill: "#f6f5f2"
+	stroke: "#dedcd6"
+	stroke-dash: 5
+	font-color: "#8a8983"
+	font-size: 12
+	opacity: 0.6
+  }
+
+  server: {
+	label: "server.c\nAccept loop, signal handling\nthread dispatch"
+	style: { fill: "#faeeda"; stroke: "#854f0b"; font-color: "#854f0b" }
+  }
+  transport: {
+	label: "transport.c\nOpaque socket I/O\npartial write, writev()"
+	style: { fill: "#faeeda"; stroke: "#854f0b"; font-color: "#854f0b" }
+  }
+  thread_pool: {
+	label: "thread_pool.c\nFixed-size pool\ncircular work queue"
+	style: { fill: "#faeeda"; stroke: "#854f0b"; font-color: "#854f0b" }
+  }
+  ratelimit: {
+	label: "ratelimit.c\nPer-IP rate limiter\ndynamic hash table"
+	style: { fill: "#faeeda"; stroke: "#854f0b"; font-color: "#854f0b" }
+  }
+}
+
+"HTTP Protocol": {
+  style: {
+	fill: "#f6f5f2"
+	stroke: "#dedcd6"
+	stroke-dash: 5
+	font-color: "#8a8983"
+	font-size: 12
+	opacity: 0.6
+  }
+
+  http: {
+	label: "http.c\nRequest parser\nbuffered header read"
+	style: { fill: "#e1f5ee"; stroke: "#0f6e56"; font-color: "#0f6e56" }
+  }
+  response: {
+	label: "response.c\nResponse builder\nerror pages, redirects"
+	style: { fill: "#e1f5ee"; stroke: "#0f6e56"; font-color: "#0f6e56" }
+  }
+  header_cache: {
+	label: "header_cache.c\nPre-computed headers\nDate/Server/Connection"
+	style: { fill: "#e1f5ee"; stroke: "#0f6e56"; font-color: "#0f6e56" }
+  }
+  mime: {
+	label: "mime.c\nMIME type lookup\nextension table"
+	style: { fill: "#e1f5ee"; stroke: "#0f6e56"; font-color: "#0f6e56" }
+  }
+  auth: {
+	label: "auth.c\nBasic Auth\nBase64 decode"
+	style: { fill: "#e1f5ee"; stroke: "#0f6e56"; font-color: "#0f6e56" }
+  }
+}
+
+"File Serving": {
+  style: {
+	fill: "#f6f5f2"
+	stroke: "#dedcd6"
+	stroke-dash: 5
+	font-color: "#8a8983"
+	font-size: 12
+	opacity: 0.6
+  }
+
+  file: {
+	label: "file.c\nsendfile() (Linux)\nthread-local buffers\nsafe_path, ETag, LR inject"
+	style: { fill: "#f3e8fc"; stroke: "#6b21a8"; font-color: "#6b21a8" }
+  }
+}
+
+"Live Reload": {
+  style: {
+	fill: "#f6f5f2"
+	stroke: "#dedcd6"
+	stroke-dash: 5
+	font-color: "#8a8983"
+	font-size: 12
+	opacity: 0.6
+  }
+
+  livereload: {
+	label: "livereload.c\nSSE connections\nhash map registry"
+	style: { fill: "#dff5f2"; stroke: "#0f7a6e"; font-color: "#0f7a6e" }
+  }
+  watcher: {
+	label: "watcher.c\ninotify (Linux) / poll\nO(N) snapshot diff"
+	style: { fill: "#dff5f2"; stroke: "#0f7a6e"; font-color: "#0f7a6e" }
+  }
+}
+
+Diagnostics: {
+  style: {
+	fill: "#f6f5f2"
+	stroke: "#dedcd6"
+	stroke-dash: 5
+	font-color: "#8a8983"
+	font-size: 12
+	opacity: 0.6
+  }
+
+  log: {
+	label: "log.c\nLock-free ring buffer\nconsumer thread"
+	style: { fill: "#faf6d8"; stroke: "#8a7a0f"; font-color: "#8a7a0f" }
+  }
+}
+
+Utilities: {
+  style: {
+	fill: "#f6f5f2"
+	stroke: "#dedcd6"
+	stroke-dash: 5
+	font-color: "#8a8983"
+	font-size: 12
+	opacity: 0.6
+  }
+
+  thread_buffer: {
+	label: "thread_buffer.c\nTLS reusable buffers\nno malloc/free"
+	style: { fill: "#eef0f4"; stroke: "#46505c"; font-color: "#46505c" }
+  }
+}
+
+# ── Edges ─────────────────────────────────────────────────
+
+"Entry & Config".main -> "Server Core".server: ServerConfig
+"Entry & Config".main -> Diagnostics.log: log_init()
+"Entry & Config".main -> "Entry & Config".project_config
+"Entry & Config".main -> "Entry & Config".types
+
+"Server Core".server -> "Server Core".transport: Transport*
+"Server Core".server -> "Server Core".thread_pool: submit tasks
+"Server Core".server -> "Server Core".ratelimit: check/leave
+"Server Core".server -> "HTTP Protocol".http: parse request
+"Server Core".server -> "HTTP Protocol".auth: check creds
+"Server Core".server -> "Live Reload".livereload: start/stop
+"Server Core".server -> "File Serving".file: dispatch serve
+"Server Core".server -> "HTTP Protocol".header_cache: build headers
+
+"HTTP Protocol".http -> "Server Core".transport: read raw headers
+"HTTP Protocol".response -> "Server Core".transport: write response
+"File Serving".file -> "HTTP Protocol".response: send_file()
+"File Serving".file -> "HTTP Protocol".mime: mime_from_path()
+"File Serving".file -> "HTTP Protocol".http: read HttpRequest
+"File Serving".file -> Utilities.thread_buffer: get_buffer()
+
+"Live Reload".livereload -> "Live Reload".watcher: create / start
+"Live Reload".livereload -> "Server Core".transport: SSE write
+
+Diagnostics.log -> "Server Core".server
+Diagnostics.log -> "File Serving".file
+Diagnostics.log -> "HTTP Protocol".http
+Diagnostics.log -> "Server Core".transport
+Diagnostics.log -> "Server Core".thread_pool
+Diagnostics.log -> "Live Reload".livereload
+Diagnostics.log -> "Server Core".ratelimit
+Diagnostics.log -> "HTTP Protocol".auth
+Diagnostics.log -> "HTTP Protocol".mime

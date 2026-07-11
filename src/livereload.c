@@ -192,7 +192,7 @@ int livereload_start(const char *root, LivereloadMode mode, bool poll)
 	const char *lr_backend_str;
 #if defined(__linux__)
 	lr_backend_str = poll ? "poll" : "inotify";
-#elif defined(__APPLE__) && defined(__MACH__)
+#elif defined(__APPLE__)
 	lr_backend_str = "poll";
 	(void)poll;
 #endif

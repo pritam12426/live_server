@@ -7,7 +7,7 @@ A lightweight, zero-dependency static file server with live reload, written in C
 ## 1. High-Level Architecture
 
 ![Module Architecture](assets/architecture.svg)
-_Source: [assets/architecture.dot](assets/architecture.dot)_
+_Source: [assets/architecture.d2](assets/architecture.d2)_
 
 No event loop library, no libuv, no async I/O. The server uses a **blocking-accept loop** with a **fixed-size thread pool**. Each accepted connection is dispatched as a task to the pool; the worker thread reads the HTTP request, serves the file, and optionally loops for keep-alive.
 
@@ -16,7 +16,7 @@ No event loop library, no libuv, no async I/O. The server uses a **blocking-acce
 ## 2. Startup Flow
 
 ![Server Startup Sequence](assets/startup-flow.svg)
-_Source: [assets/startup-flow.dot](assets/startup-flow.dot)_
+_Source: [assets/startup-flow.d2](assets/startup-flow.d2)_
 
 ### 2.1 `src/main.c` — Entry Point
 
@@ -176,19 +176,19 @@ int header_cache_build(char *buf, size_t len,
    b. **Conditional GET** — If `If-None-Match` matches or `If-Modified-Since` shows no modification, returns 304.
 
    c. **Live-reload injection** — If HTML and live reload enabled:
-   - Reads entire file into **thread-local buffer** (from `thread_buffer.c`).
-   - Single-pass scan for `</body>` / `</BODY>`, injects `<script>` with `EventSource`.
-   - Sets `Cache-Control: no-store` to prevent caching of the injected script.
+      - Reads entire file into **thread-local buffer** (from `thread_buffer.c`).
+      - Single-pass scan for `</body>` / `</BODY>`, injects `<script>` with `EventSource`.
+      - Sets `Cache-Control: no-store` to prevent caching of the injected script.
 
    d. **Range request handling** — If `Range` specified:
-   - Computes requested range, handles suffix ranges (`-500` = last 500 bytes).
-   - Validates range against file size. Returns 416 `Range Not Satisfiable` if invalid.
-   - Seeks to start position with `lseek()`.
+      - Computes requested range, handles suffix ranges (`-500` = last 500 bytes).
+      - Validates range against file size. Returns 416 `Range Not Satisfiable` if invalid.
+      - Seeks to start position with `lseek()`.
 
    e. **Zero-copy send on Linux** — For non-range GET requests:
-   - Builds header, writes via `transport_write()`.
-   - Uses `sendfile()` to transfer file directly from kernel to socket — no userspace copy.
-   - Falls back to `read()` + `write()` for range requests, HEAD, non-Linux, or if sendfile fails.
+      - Builds header, writes via `transport_write()`.
+      - Uses `sendfile()` to transfer file directly from kernel to socket — no userspace copy.
+      - Falls back to `read()` + `write()` for range requests, HEAD, non-Linux, or if sendfile fails.
 
    f. **Thread-local buffers** — File reads use `thread_buffer_get_body()` which reuses a per-thread buffer that grows on demand but never shrinks, eliminating `malloc`/`free` per request.
 
@@ -246,7 +246,7 @@ Manages SSE connections and broadcasts reload events.
 
 ### 3.10 `watcher.c` — File-System Watcher
 
-Two backends, compiled conditionally:
+Three backends, compiled conditionally:
 
 **Linux inotify** (default):
 
@@ -256,7 +256,15 @@ Two backends, compiled conditionally:
 - If a new directory is created (`IN_CREATE`|`IN_MOVED_TO` and `S_ISDIR`), it is recursively added to the watch set.
 - Wake pipe: on shutdown, a byte is written to the pipe, which unblocks `select()`.
 
-**Poll fallback** (macOS and `--poll` on Linux):
+**macOS kqueue** (default on macOS):
+
+- Creates a kqueue fd, recursively adds watches for all directories under root using `EVFILT_VNODE` with `O_EVTONLY` directory fds.
+- Thread blocks on `kevent()` with both the kqueue and a wake pipe (registered via `EVFILT_READ` with `EV_ONESHOT`).
+- On event: reads `kevent` structs, identifies the directory fd, and calls the user callback.
+- If a new directory is created (`NOTE_WRITE|NOTE_LINK|NOTE_RENAME`), scans the directory and recursively adds new subdirectories to the watch set.
+- Wake pipe: on shutdown, a byte is written to the pipe, which unblocks `kevent()`.
+
+**Poll fallback** (`--poll` on Linux, or if kqueue/inotify fails):
 
 - Takes a snapshot of all files under root with their mtimes.
 - Every 500ms, takes another snapshot and compares using a **hash map** for O(N) diff:
@@ -302,10 +310,10 @@ Four levels: ERROR, WARN, INFO, DEBUG.
 ## 4. Request Lifecycle (Complete Example)
 
 ![HTTP Request Lifecycle](assets/request-lifecycle.svg)
-_Source: [assets/request-lifecycle.dot](assets/request-lifecycle.dot)_
+_Source: [assets/request-lifecycle.d2](assets/request-lifecycle.d2)_
 
 ![Thread Model](assets/thread-model.svg)
-_Source: [assets/thread-model.dot](assets/thread-model.dot)_
+_Source: [assets/thread-model.d2](assets/thread-model.d2)_
 
 ---
 
@@ -357,7 +365,7 @@ _Source: [assets/thread-model.dot](assets/thread-model.dot)_
 | **No directory listing**                 | Intentionally omitted. If a directory has no `index.html`, returns 404.                                                            |
 | **No compression**                       | Simplifies code significantly. Live-reload injection would need to decompress first anyway.                                        |
 | **No TLS**                               | Was present in an earlier version, removed to keep zero-dependency promise. Pair with a reverse proxy for HTTPS.                   |
-| **Poll on macOS**                        | macOS has no inotify. `kqueue` could be added but poll is portable and simple.                                                     |
+| **kqueue on macOS**                      | Native event-driven file watching. Poll fallback only if kqueue fails or `--poll` flag used.                                       |
 | **Opaque Transport**                     | Abstraction for future TLS support without changing calling code.                                                                  |
 | **Dynamic hash table in ratelimit**      | Grows with load, avoids fixed 1024-slot degradation under churn.                                                                   |
 | **Lock-free ring buffer logger**         | Eliminates mutex contention under load. Consumer thread batches I/O.                                                               |
@@ -387,7 +395,7 @@ src/
 ├── thread_pool.c / .h  # Fixed-size thread pool
 ├── thread_buffer.c / .h# TLS reusable buffers
 ├── livereload.c / .h   # SSE connection management (hash map)
-├── watcher.c / .h      # File watcher (inotify / poll + hash map diff)
+├── watcher.c / .h      # File watcher (inotify / kqueue / poll + hash map diff)
 ├── ratelimit.c / .h    # Per-IP connection rate limiting (dynamic hash)
 ├── mime.c / .h         # MIME type lookup by extension
 ├── log.c / .h          # Lock-free ring buffer logger
@@ -442,12 +450,5 @@ Hash map lookup for mtime comparison vs O(N²) nested loop. Significant for dire
 
 ---
 
-## 10. Future Work Ideas
-
-- **`io_uring` backend** — True async I/O for Linux. Would eliminate thread pool entirely.
-- **Brotli/gzip compression** — On-the-fly compression with `Accept-Encoding` negotiation.
-- **HTTP/2 support** — Multiplexing, header compression (HPACK), server push.
-- **WebSocket support** — Upgrade path for real-time features beyond SSE.
-- **Directory listing** — Optional auto-index with templating.
-- **Request body streaming** — Support POST/PUT with chunked transfer encoding.
-- **Metrics endpoint** — Prometheus-compatible `/metrics` for observability.
+# 10. Version History
+- **2.7.0** — Added kqueue backend for macOS (native file watching), heap-allocated PollMap to fix stack overflow, full path keys in poll hash map, double ratelimit_leave fix on SSE path, FD leak fix on transport_new failure, snprintf truncation guards, build_etag bounds checking, ratelimit integer math, zero compiler warnings under ASan+UBSan.

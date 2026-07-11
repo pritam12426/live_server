@@ -1,0 +1,293 @@
+.\" DO NOT EDIT — generated from README.md
+.TH LIVE-SERVER 1 "2026-07-11" "live-server 2.7.0" "User Commands"
+.SH NAME
+live-server \- lightweight static file server with live reload
+.SH SYNOPSIS
+.B live-server
+[\fB\-L\fR|\fB\-\-log-level\fR]
+[\fB\-R\fR|\fB\-\-print-request\fR]
+[\fB\-U\fR|\fB\-\-live-reload\fR]
+[\fB\-W\fR|\fB\-\-live-hard-reload\fR]
+[\fB\-H\fR|\fB\-\-host\fR]
+[\fB\-K\fR|\fB\-\-keep-alive\fR]
+[\fB\-M\fR|\fB\-\-max-conns\fR]
+[\fB\-T\fR|\fB\-\-threads\fR]
+[\fB\-p\fR|\fB\-\-pass\fR]
+[\fB\-p\fR|\fB\-\-pass\fR]
+[\fB\-B\fR|\fB\-\-browser\fR]
+[\fB\-i\fR|\fB\-\-ignore\fR]
+[\fB\-I\fR|\fB\-\-dir\fR]
+[\fB\-o\fR|\fB\-\-poll\fR]
+[\fB\-?\fR|\fB\-\-help\fR]
+[\fB\-\-usage\fR]
+[\fB\-V\fR|\fB\-\-version\fR]
+.SH DESCRIPTION
+.B live-server
+is a zero-dependency, single-binary static file server written in C17 for local
+development. It serves files over HTTP/1.1 with correct MIME types, ETag/conditional
+requests, byte-range support, and keep-alive. Optional live reload injects a
+Server-Sent Events client into HTML responses and broadcasts reload events when
+the filesystem changes.
+
+The server uses a fixed-size thread pool with a circular work queue — no
+thread-per-connection, no async runtime, no external libraries beyond POSIX
+and pthreads. On Linux it uses \fBsendfile()\fR for zero-copy static file transfer;
+on macOS it uses native \fBkqueue\fR for event-driven file watching.
+
+All configuration is via command-line flags; there are no config files,
+environment variables, or hidden state.
+.SH OPTIONS
+.\" Server identity
+.SS "Server Identity"
+.TP
+\fB\-I\fR, \fB\-\-dir\fR \fI<DIR>\fR
+\fI<DIR>\fR to serve. Defaults to current working directory. Must exist and be
+readable. Symlinks are followed; the resolved path is cached at startup.
+.TP
+\fB\-P\fR, \fB\-\-port\fR \fI<PORT>\fR
+TCP port to listen on \fI<PORT>\fR. Default: \fB8080\fR.
+.TP
+\fB\-H\fR, \fB\-\-host\fR \fI<HOST>\fR
+Bind address \fI<HOST>\fR. Default: \fBlocalhost\fR (loopback only). Use \fB0.0.0.0\fR to
+accept connections from other machines on the LAN (e.g. mobile testing).
+.TP
+\fB\-B\fR, \fB\-\-browser\fR \fI<CMD>\fR
+Launch a browser on startup. The argument is passed to \fBexeclp(3)\fR;
+common values: \fBopen\fR (macOS), \fBxdg-open\fR (Linux), \fBfirefox\fR,
+\fBchrome\fR. If the command fails, a warning is logged and the server continues.
+
+.\" Concurrency
+.SS "Concurrency"
+.TP
+\fB\-t\fR, \fB\-\-threads\fR \fI<NUM>\fR
+Thread pool size \fI<NUM>\fR. Default: \fB4\fR. Each worker pulls tasks from a
+shared circular queue (4096 slots) protected by a mutex and two condition
+variables. The accept loop blocks when the queue is full, providing natural
+backpressure.
+.TP
+\fB\-k\fR, \fB\-\-keep-alive\fR \fI<SECS>\fR
+Keep-alive timeout in seconds \fI<SECS>\fR. Default: \fB5\fR. A value of 0
+disables keep-alive entirely (each request gets a fresh connection). When
+enabled, the server sets \fBSO_RCVTIMEO\fR on the socket and reuses the
+connection for subsequent requests from the same client.
+
+.\" Rate limiting
+.SS "Rate Limiting"
+.TP
+\fB\-M\fR, \fB\-\-max-conns\fR \fI<NUM>\fR
+Maximum concurrent connections per client IP. Default: \fB0\fR
+(unlimited). Implemented as a dynamic open-addressing hash table (djb2 hash,
+linear probing) that doubles in size at 75% load factor. IP strings are owned
+by the table and freed when the count drops to zero.
+
+.\" Authentication
+.SS "Authentication"
+.TP
+\fB\-u\fR, \fB\-\-user\fR \fI<USER>\fR
+Enable HTTP Basic Authentication with the given username. Requires \fB\-\-pass\fR.
+Default: \fBadmin\fR if only \fB\-\-pass\fR is given.
+.TP
+\fB\-p\fR, \fB\-\-pass\fR \fI<PASS>\fR
+Enable HTTP Basic Authentication with the given password. Requires \fB\-\-user\fR.
+Default: \fBadmin\fR if only \fB\-\-user\fR is given.
+
+The \fBAuthorization\fR header is decoded with a hand-rolled Base64 decoder (no
+external dependency). On failure, the server responds with \fB401 Unauthorized\fR
+and \fBWWW-Authenticate: Basic realm="live-server"\fR.
+
+.\" Logging
+.SS "Logging"
+.TP
+\fB\-L\fR, \fB\-\-log-level\fR \fI<LEVEL>\fR
+Log verbosity: \fBerror\fR, \fBwarn\fR, \fBinfo\fR, \fBdebug\fR. Default:
+\fBinfo\fR.
+.TP
+\fB\-R\fR, \fB\-\-print-request\fR
+Log the full raw request headers (method, path, version, all headers) at
+\fBdebug\fR level for each connection. Implies \fB\-\-log-level=debug\fR.
+
+.\" Live reload
+.SS "Live Reload"
+.TP
+\fB\-U\fR, \fB\-\-live-reload\fR
+Enable soft reload. The server injects a small \fB<script>\fR into every
+\fBtext/html\fR response (single-pass \fB</body>\fR scan) that opens an
+\fBEventSource\fR to \fB/livereload\fR.
+.TP
+\fB\-W\fR, \fB\-\-live-hard-reload\fR
+Enable hard reload. Same injection mechanism, but the broadcast is
+\fBdata: hard-reload\n\n\fR; the client appends \fB_lr=<timestamp>\fR to the
+URL and navigates, bypassing the browser cache. Mutually exclusive with
+\fB\-\-live-reload\fR.
+
+Live reload sets \fBCache-Control: no-store\fR on injected pages to prevent
+caching of the injected script.
+
+.\" File watcher
+.SS "File Watcher"
+.TP
+\fB\-o\fR, \fB\-\-poll\fR
+Force the portable poll-based watcher (500 ms interval) instead of the native
+backend. On Linux the default is \fBinotify\fR; on macOS the default is
+\fBkqueue\fR. The poll watcher snapshots the entire tree and diffs mtimes
+using a hash map for O(N) comparison.
+.TP
+\fB\-i\fR, \fB\-\-ignore\fR
+Skip hidden files and directories (names starting with \fB.\fR) in the watcher.
+
+.\" Help / Version
+.SS "Information"
+.TP
+\fB\-\-help\fR
+Display help text and exit.
+.TP
+\fB\-\-version\fR
+Print version string and exit.
+
+.SH EXAMPLES
+.TP
+Basic usage
+.B live-server
+.br
+Serves \fB./\fR on \fBhttp://localhost:8080\fR.
+.TP
+Custom directory and port
+.B live-server -I ./dist -P 3000
+.br
+Serves \fB./dist\fR on port \fB3000\fR.
+.TP
+LAN access for mobile testing
+.B live-server -H 0.0.0.0 -P 8080
+.br
+Binds to all interfaces; other devices on the same network can reach the
+server at the host's LAN IP.
+.TP
+Soft live reload during development
+.B live-server -I ./site -U
+.br
+Any file change triggers a soft reload in connected browsers.
+.TP
+Hard reload (cache-busting)
+.B live-server -I ./site -W
+.br
+Forces full navigation with cache-busting query parameter.
+.TP
+Rate limit + Basic Auth
+.B live-server -M 10 -u me -p secret
+.br
+At most 10 concurrent connections per IP; requires username \fBme\fR and
+password \fBsecret\fR.
+.TP
+Open browser on start (macOS)
+.B live-server -B open
+.br
+On Linux use \fB-B xdg-open\fR or \fB-B firefox\fR.
+
+.SH FILE WATCHER BACKENDS
+The watcher runs in a dedicated pthread and calls the callback on change.
+.TP
+Linux (default)
+\fBinotify\fR (recursive). Creates a watch descriptor for the root and every
+subdirectory. New directories are auto-watched on \fBIN_CREATE|\fR\fBIN_MOVED_TO\fR.
+Uses \fBselect(2)\fR on the inotify fd + a wake pipe for shutdown.
+.TP
+macOS (default)
+\fBkqueue\fR (recursive). Opens each directory with \fBO_EVTONLY\fR and registers
+\fBEVFILT_VNODE\fR with \fBNOTE_WRITE|NOTE_EXTEND|NOTE_ATTRIB|NOTE_LINK|
+NOTE_RENAME|NOTE_REVOKE|NOTE_DELETE\fR. New directories are scanned and added
+on \fBNOTE_WRITE|NOTE_LINK|NOTE_RENAME\fR. Uses \fBkevent(2)\fR with a 2-second
+timeout + wake pipe.
+.TP
+Fallback (Linux \fB\-\-poll\fR or if native backend fails)
+Periodic snapshot every 500 ms. Builds an in-memory array of (path, mtime)
+pairs and compares against the previous snapshot using a 4096-slot hash map
+with full-path keys (truncated to 63 chars) for O(N) diff. Uses \fBselect(2)\fR
+on a wake pipe.
+
+.SH ACCESS LOG FORMAT
+Each request produces one line on stderr:
+.nf
+[HH:MM:SS.mmmmmm] [LEVEL] CLIENT_IP:CLIENT_PORT "METHOD PATH VERSION" STATUS - (BYTES bytes, MIME)
+.fi
+Example:
+.nf
+[12:34:56.789012] [INFO ] 127.0.0.1:54321 "GET /index.html HTTP/1.1" 200 - (3012 bytes, text/html)
+.fi
+With \fB\-\-print-request\fR, the raw headers follow at debug level.
+
+.SH PERFORMANCE CHARACTERISTICS
+.TP
+Linux static files
+\fBsendfile()\fR zero-copy kernel\u2192socket for non-range GET requests.
+.TP
+Headers
+Date/Server/Connection pre-formatted once per second; \fBwritev()\fR emits
+headers + body in one syscall.
+.TP
+Thread-local buffers
+Per-thread grow-only body buffers eliminate \fBmalloc/free\fR on the read path.
+.TP
+Lock-free logging
+Producer: atomic \fBfetch_add\fR + format into ring slot (~50 ns).
+Consumer: batched \fBfwrite\fR + single \fBfflush\fR.
+.TP
+Rate limiter
+Dynamic hash table, grows 2\u00d7 at 75% load; IP strings freed at count=0.
+.TP
+SSE registry
+1024-bucket hash map; O(1) add/remove/broadcast.
+
+.SH SIGNALS
+.TP
+\fBSIGINT\fR, \fBSIGTERM\fR
+Graceful shutdown: stops accept loop, drains thread pool (workers finish
+current task), stops watcher, closes listener, joins all threads.
+.TP
+\fBSIGPIPE\fR
+Ignored (\fBSIG_IGN\fR). Write errors on closed sockets are handled via
+return values.
+
+.SH FILES
+No configuration files, no environment variables, no runtime state outside
+the process. All settings via command line.
+
+.SH EXIT STATUS
+.TP
+\fB0\fR
+Successful shutdown (signal received).
+.TP
+\fB1\fR
+Startup failure: bind error, thread pool creation failure, watcher creation
+failure, invalid arguments.
+
+.SH LIMITATIONS
+.TP
+\fBNo HTTPS/TLS\fR
+Pair with a reverse proxy (nginx, Caddy, mkcert) for local HTTPS.
+.TP
+\fBNo compression\fR
+\fBgzip\fR/\fBbrotli\fR omitted — dev tools show uncompressed sizes; compression
+would complicate live-reload injection.
+.TP
+\fBNo directory listing\fR
+If a directory lacks \fBindex.html\fR, returns \fB404\fR (not \fB403\fR).
+.TP
+\fBNo HTTP/2\fR
+Single-threaded accept + thread pool is HTTP/1.1 only.
+.TP
+\fBWhole file in memory for injection\fR
+HTML files are read completely for \fB</body>\fR scan + script injection.
+Not suitable for multi-GB files.
+
+.SH SEE ALSO
+\fBcurl\fR(1), \fBnc\fR(1), \fBsendfile\fR(2), \fBkevent\fR(2), \fBinotify\fR(7)
+
+.SH Bug Report to
+https://github.com/pritam12426/http_server_c/issues
+
+.SH AUTHORS
+Pritam <84720825+pritam12426@users.noreply.github.com>
+
+
+.SH LICENSE
+MIT

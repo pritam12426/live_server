@@ -1,0 +1,139 @@
+direction: right
+#title: "Thread Model"
+
+# ── Main Thread ───────────────────────────────────────────
+
+"Main Thread (process)": {
+  style: {
+		stroke-dash: 5
+		font-size: 11
+		opacity: 0.6
+  }
+
+  main_thread: {
+		shape: sql_table
+		"parse CLI args (argp)": ""
+		"log_init() → consumer thread": ""
+		"make_listener()": ""
+		"livereload_start()": ""
+		"thread_pool_create()": ""
+		"accept() loop": ""
+		"submit ClientJob to pool": ""
+		style: { font-size: 10 }
+  }
+}
+
+# ── Thread Pool ───────────────────────────────────────────
+
+"Thread Pool (configurable, default 4)": {
+  style: {
+		stroke-dash: 5
+		font-size: 11
+		opacity: 0.6
+  }
+
+  shared_queue: {
+		shape: sql_table
+		"circular buffer (4096 slots)": ""
+		"mutex + 2 condvars": ""
+		"queued: ClientJob*": ""
+		style: { font-size: 10 }
+  }
+
+  worker1: {
+		shape: sql_table
+		"pull task from queue": ""
+		"handle_client()": ""
+		"keep-alive loop": ""
+		"TLS buffer reuse": ""
+		style: {font-size: 10 }
+	}
+	worker2: {
+		shape: sql_table
+		"pull task from queue": ""
+		"handle_client()": ""
+		"keep-alive loop": ""
+		"TLS buffer reuse": ""
+		style: {font-size: 10 }
+	}
+	workerN: {
+		shape: sql_table
+		"pull task from queue": ""
+		"handle_client()": ""
+		"keep-alive loop": ""
+		"TLS buffer reuse": ""
+		style: {font-size: 10 }
+	}
+}
+
+# ── Dedicated Threads ─────────────────────────────────────
+
+"Dedicated Threads": {
+	style: {
+		fill: "#f6f5f2"
+		stroke: "#dedcd6"
+		stroke-dash: 5
+		font-color: "#0f7a6e"
+		font-size: 11
+		opacity: 0.6
+	}
+
+	watcher_thread: {
+		shape: sql_table
+		"inotify or poll": ""
+		"select() on events": ""
+		"calls on_change()": ""
+		style: {font-size: 10 }
+	}
+
+	log_consumer: {
+		shape: sql_table
+		"drains lock-free ring": ""
+		"raw fwrite() batch": ""
+		"1 fflush() per batch": ""
+		style: {font-size: 10 }
+	}
+
+	sse1: {
+		shape: sql_table
+		"dedicated pthread": ""
+		"heartbeat every 15s": ""
+		"reads no data": ""
+		style: {font-size: 10 }
+	}
+	sse2: {
+		shape: sql_table
+		"dedicated pthread": ""
+		"heartbeat every 15s": ""
+		"reads no data": ""
+		style: {font-size: 10 }
+	}
+}
+
+# ── Edges ─────────────────────────────────────────────────
+
+"Main Thread (process)".main_thread -> "Thread Pool (configurable, default 4)".shared_queue: submit()
+"Main Thread (process)".main_thread -> "Dedicated Threads".watcher_thread: watcher_start()
+"Main Thread (process)".main_thread -> "Dedicated Threads".log_consumer: log_init() spawns
+"Thread Pool (configurable, default 4)".shared_queue -> "Thread Pool (configurable, default 4)".worker1: dequeue
+"Thread Pool (configurable, default 4)".shared_queue -> "Thread Pool (configurable, default 4)".worker2: dequeue
+"Thread Pool (configurable, default 4)".shared_queue -> "Thread Pool (configurable, default 4)".workerN: dequeue
+
+"Thread Pool (configurable, default 4)".worker1 -> "Dedicated Threads".sse1: SSE client detected
+"Thread Pool (configurable, default 4)".worker2 -> "Dedicated Threads".sse2: SSE client detected
+
+# ── Annotations ───────────────────────────────────────────
+
+note: {
+	label: |md
+		**Key Properties**
+		1. Accept never blocks workers
+		2. Each SSE client = 1 pthread
+		3. SSE threads are detached
+		4. Watcher is 1 thread total
+		5. Log consumer = 1 thread
+		6. Queue full → accept() blocks (!)
+		7. g_shutdown atomic kills all loops
+		8. Workers reuse TLS buffers
+	|
+}

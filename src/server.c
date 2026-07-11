@@ -117,9 +117,14 @@ static void handle_client(void *arg)
 				sse->rl = job->rl;
 				memcpy(sse->client_ip, client_ip, INET6_ADDRSTRLEN);
 				pthread_t tid;
-				pthread_create(&tid, NULL, sse_worker, sse);
-				pthread_detach(tid);
-				t = NULL;  // ownership transferred to SSE thread
+				if (pthread_create(&tid, NULL, sse_worker, sse) != 0) {
+					LOG_WARN("pthread_create failed for SSE, falling back to normal close");
+					transport_destroy(&sse->t);
+					free(sse);
+				} else {
+					pthread_detach(tid);
+					t = NULL;  // ownership transferred to SSE thread
+				}
 			} else {
 				transport_destroy(&t);
 			}
@@ -143,7 +148,10 @@ static void handle_client(void *arg)
 		transport_set_timeout(t, cfg.keep_alive_timeout);
 	} while (!atomic_load_explicit(&g_shutdown, memory_order_relaxed));
 
-	if (job->rl)
+	// Only release rate limit if we still own the transport.
+	// When t == NULL, ownership was transferred to the SSE thread,
+	// which will call ratelimit_leave when it finishes.
+	if (t && job->rl)
 		ratelimit_leave(job->rl, client_ip);
 	transport_destroy(&t);
 	free(job);
@@ -229,7 +237,7 @@ static void open_browser(const char *browser, const char *host, int port)
 		LOG_WARN("Browser '%s' not found, trying xdg-open fallback", browser);
 		execlp("xdg-open", "xdg-open", url, (char *)NULL);
 		LOG_ERROR("xdg-open also failed to launch");
-#elif defined(__APPLE__) && defined(__MACH__)
+#elif defined(__APPLE__)
 		LOG_WARN("Browser '%s' not found, trying open fallback", browser);
 		execlp("open", "open", url, (char *)NULL);
 		LOG_ERROR("open also failed to launch");
@@ -309,6 +317,7 @@ int server_run(const ServerConfig *cfg)
 		Transport *t = transport_new(cfd);
 		if (!t) {
 			LOG_WARN("transport_new failed for fd=%d", cfd);
+			close(cfd);
 			continue;
 		}
 

@@ -16,7 +16,8 @@
 UNAME_S := $(shell uname -s)
 
 PREFIX ?= /usr/local
-MANPREFIX ?= $(PREFIX)/share/man
+BINPREFIX ?= $(PREFIX)/bin
+MANPREFIX ?= $(PREFIX)/share/man/man1
 
 STRIP ?= strip
 PKG_CONFIG ?= pkg-config
@@ -90,14 +91,18 @@ $(BIN): $(OUT) ## Build the live-server binary
 debug: $(BIN) ## Build the debug binary run `make debug -B O_DEBUG=1`
 
 install: all ## Install the live-server binary
-	$(INSTALL) -m 0755 -d $(DESTDIR)$(PREFIX)/bin
-	$(INSTALL) -m 0755 $(BIN) $(DESTDIR)$(PREFIX)/bin
+	$(INSTALL) -m 0755 -d $(DESTDIR)$(BINPREFIX)
+	$(INSTALL) -m 0755 $(BIN) $(DESTDIR)$(BINPREFIX)
+
+	$(INSTALL) -m 0755 -d $(DESTDIR)$(MANPREFIX)
+	$(INSTALL) -m 0755 live-server.1 $(DESTDIR)$(MANPREFIX)
 
 clean: ## Clean up build artifacts
 	$(RM) -rf $(OUT) $(BIN)
 
 uninstall: ## Uninstall the live-server binary
-	$(RM) $(DESTDIR)$(PREFIX)/bin/$(BIN)
+	$(RM) $(DESTDIR)$(BINPREFIX)/$(BIN)
+	$(RM) $(DESTDIR)$(MANPREFIX)/live-server.1
 
 strip: $(BIN) ## Strip the live-server binary
 	$(STRIP) $^
