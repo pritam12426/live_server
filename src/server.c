@@ -256,6 +256,7 @@ int server_run(const ServerConfig *cfg)
 	sigaction(SIGTERM, &sa, NULL);
 
 	signal(SIGPIPE, SIG_IGN);
+	signal(SIGCHLD, SIG_IGN);
 
 	int lfd = make_listener(cfg->host, cfg->port);
 	if (lfd < 0) return -1;
