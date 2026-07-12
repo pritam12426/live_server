@@ -11,8 +11,8 @@
 #ifndef _WATCHER_INTERNAL_H_
 #define _WATCHER_INTERNAL_H_
 
-
 #include <stdatomic.h>
+#include <pthread.h>
 #include <time.h>
 
 /* Callback type (forward declare) */

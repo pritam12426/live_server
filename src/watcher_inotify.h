@@ -16,7 +16,7 @@
 
 #if defined(__linux__)
 
-void watcher_inotify_watch_recursive(Watcher *w, const char *path);
+void watcher_inotify_watch_recursive(Watcher *w, const char *path, int ignore_hidden);
 void *watcher_inotify_thread(void *arg);
 void watcher_inotify_cleanup(Watcher *w);
 int watcher_inotify_init(Watcher *w);

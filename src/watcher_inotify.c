@@ -25,6 +25,7 @@
 #include <string.h>
 #include <sys/inotify.h>
 #include <sys/select.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 #include "log.h"
@@ -68,7 +69,7 @@ static int inotify_add_dir(Watcher *w, const char *path)
  * @param path          directory to watch
  * @param ignore_hidden skip dotfiles/directories
  */
-void watcher_inotify_watch_recursive(Watcher *w, const char *path)
+void watcher_inotify_watch_recursive(Watcher *w, const char *path, int ignore_hidden)
 {
 	inotify_add_dir(w, path);
 
@@ -78,14 +79,14 @@ void watcher_inotify_watch_recursive(Watcher *w, const char *path)
 	struct dirent *ent;
 	while ((ent = readdir(d)) != NULL) {
 		if (strcmp(ent->d_name, ".") == 0 || strcmp(ent->d_name, "..") == 0) continue;
-		if (w->ignore_hidden && ent->d_name[0] == '.') continue;
+		if (ignore_hidden && ent->d_name[0] == '.') continue;
 
 		char sub[4096];
 		snprintf(sub, sizeof sub, "%s/%s", path, ent->d_name);
 
 		struct stat st;
 		if (stat(sub, &st) == 0 && S_ISDIR(st.st_mode))
-			watcher_inotify_watch_recursive(w, sub);
+			watcher_inotify_watch_recursive(w, sub, ignore_hidden);
 	}
 	closedir(d);
 }
@@ -114,7 +115,7 @@ int watcher_inotify_init(Watcher *w)
 	w->ifd = inotify_init1(IN_NONBLOCK);
 	if (w->ifd < 0) return -1;
 
-	watcher_inotify_watch_recursive(w, w->root);
+	watcher_inotify_watch_recursive(w, w->root, w->ignore_hidden);
 	return 0;
 }
 
@@ -179,7 +180,7 @@ void *watcher_inotify_thread(void *arg)
 			    ev->len > 0) {
 				struct stat st;
 				if (stat(changed_path, &st) == 0 && S_ISDIR(st.st_mode))
-					watcher_inotify_watch_recursive(w, changed_path);
+					watcher_inotify_watch_recursive(w, changed_path, w->ignore_hidden);
 			}
 
 			if (!fired) {
