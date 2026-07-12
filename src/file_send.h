@@ -1,9 +1,16 @@
 /*
+ * Copyright (c) 2026 Pritam
+ *
+ * SPDX-License-Identifier: MIT
+ */
+
+/*
  * file_send.h — File sending implementation
  */
 
 #ifndef _FILE_SEND_H_
 #define _FILE_SEND_H_
+
 
 #include "types.h"
 #include "http.h"
@@ -20,5 +27,6 @@ int file_send_file(Transport *t,
                    LivereloadMode livereload_mode,
                    int print_request,
                    int keep_alive);
+
 
 #endif  // _FILE_SEND_H_

@@ -1,4 +1,10 @@
 /*
+ * Copyright (c) 2026 Pritam
+ *
+ * SPDX-License-Identifier: MIT
+ */
+
+/*
  * ratelimit.c — Per-IP connection rate limiting
  *
  * Uses a dynamic open-addressing hash table that grows as needed.

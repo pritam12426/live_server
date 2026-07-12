@@ -1,4 +1,10 @@
 /*
+ * Copyright (c) 2026 Pritam
+ *
+ * SPDX-License-Identifier: MIT
+ */
+
+/*
  * thread_buffer.c — Thread-local buffer pool
  *
  * Each thread gets its own reusable buffers to avoid malloc/free

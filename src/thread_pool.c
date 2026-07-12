@@ -1,4 +1,10 @@
 /*
+ * Copyright (c) 2026 Pritam
+ *
+ * SPDX-License-Identifier: MIT
+ */
+
+/*
  * thread_pool.c — Fixed-size thread pool with work queue
  *
  * Each worker pulls tasks from a circular buffer protected by a mutex.

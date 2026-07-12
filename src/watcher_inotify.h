@@ -1,9 +1,16 @@
 /*
+ * Copyright (c) 2026 Pritam
+ *
+ * SPDX-License-Identifier: MIT
+ */
+
+/*
  * watcher_inotify.h — Linux inotify backend (internal)
  */
 
 #ifndef _WATCHER_INOTIFY_H_
 #define _WATCHER_INOTIFY_H_
+
 
 #include "watcher_internal.h"
 
@@ -15,5 +22,6 @@ void watcher_inotify_cleanup(Watcher *w);
 int watcher_inotify_init(Watcher *w);
 
 #endif  // __linux__
+
 
 #endif  // _WATCHER_INOTIFY_H_

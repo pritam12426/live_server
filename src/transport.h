@@ -1,4 +1,10 @@
 /*
+ * Copyright (c) 2026 Pritam
+ *
+ * SPDX-License-Identifier: MIT
+ */
+
+/*
  * transport.h — Abstract I/O layer over plain sockets
  *
  * Transport* is an opaque handle.  The rest of the server never

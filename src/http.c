@@ -1,4 +1,10 @@
 /*
+ * Copyright (c) 2026 Pritam
+ *
+ * SPDX-License-Identifier: MIT
+ */
+
+/*
  * http.c — HTTP request parsing and low-level response helpers
  *
  * Parses the request line + headers from a Transport into an HttpRequest,

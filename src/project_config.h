@@ -1,4 +1,10 @@
 /*
+ * Copyright (c) 2026 Pritam
+ *
+ * SPDX-License-Identifier: MIT
+ */
+
+/*
  * project_config.h — Project metadata constants
  *
  * Central location for strings used in --version, --help,

@@ -1,4 +1,10 @@
 /*
+ * Copyright (c) 2026 Pritam
+ *
+ * SPDX-License-Identifier: MIT
+ */
+
+/*
  * header_cache.c — Pre-computed static HTTP header components
  *
  * Static headers (Date, Server, Connection) are cached and updated

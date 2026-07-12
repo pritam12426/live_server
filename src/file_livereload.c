@@ -55,27 +55,27 @@ int file_livereload_should_inject(const char *mime, LivereloadMode mode)
 }
 
 void file_livereload_inject(const char *body, size_t body_len,
-                             char *out, size_t out_len,
-                             size_t *out_len_ptr)
+                            char *out, size_t out_len,
+                            size_t *out_len_ptr)
 {
-    size_t script_len = strlen(LIVERELOAD_SCRIPT);
-    size_t total_len = body_len + script_len + 32;
+	size_t script_len = strlen(LIVERELOAD_SCRIPT);
+	size_t total_len = body_len + script_len + 32;
 
-    if (total_len >= out_len) {
-        *out_len_ptr = 0;
-        return;
-    }
+	if (total_len >= out_len) {
+		*out_len_ptr = 0;
+		return;
+	}
 
-    memcpy(out, body, body_len);
-    out[body_len] = '\0';
+	memcpy(out, body, body_len);
+	out[body_len] = '\0';
 
-    char *closing = find_body_close(out);
-    if (closing) {
-        memmove(closing + script_len, closing, body_len - (size_t)(closing - out) + 1);
-        memcpy(closing, LIVERELOAD_SCRIPT, script_len);
-        *out_len_ptr = body_len + script_len;
-    } else {
-        memcpy(out + body_len, LIVERELOAD_SCRIPT, script_len);
-        *out_len_ptr = body_len + script_len;
-    }
+	char *closing = find_body_close(out);
+	if (closing) {
+		memmove(closing + script_len, closing, body_len - (size_t)(closing - out) + 1);
+		memcpy(closing, LIVERELOAD_SCRIPT, script_len);
+		*out_len_ptr = body_len + script_len;
+	} else {
+		memcpy(out + body_len, LIVERELOAD_SCRIPT, script_len);
+		*out_len_ptr = body_len + script_len;
+	}
 }

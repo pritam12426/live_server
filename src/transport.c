@@ -1,4 +1,10 @@
 /*
+ * Copyright (c) 2026 Pritam
+ *
+ * SPDX-License-Identifier: MIT
+ */
+
+/*
  * transport.c — Abstract I/O layer over plain sockets
  *
  * Transport wraps a raw fd so the rest of the server can read/write

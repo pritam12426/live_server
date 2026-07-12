@@ -1,4 +1,10 @@
 /*
+ * Copyright (c) 2026 Pritam
+ *
+ * SPDX-License-Identifier: MIT
+ */
+
+/*
  * ratelimit.h — Per-IP connection rate limiting
  *
  * Tracks concurrent connections per client IP and rejects new ones

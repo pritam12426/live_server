@@ -1,9 +1,16 @@
 /*
+ * Copyright (c) 2026 Pritam
+ *
+ * SPDX-License-Identifier: MIT
+ */
+
+/*
  * watcher.h — File-system watcher (inotify, kqueue, or poll)
  */
 
 #ifndef _WATCHER_H_
 #define _WATCHER_H_
+
 
 #include "watcher_internal.h"
 
@@ -30,5 +37,6 @@ void watcher_stop(Watcher *w);
 
 /* Free all resources.  Call after watcher_stop(). */
 void watcher_destroy(Watcher *w);
+
 
 #endif  // _WATCHER_H_

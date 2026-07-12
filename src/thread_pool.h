@@ -1,4 +1,10 @@
 /*
+ * Copyright (c) 2026 Pritam
+ *
+ * SPDX-License-Identifier: MIT
+ */
+
+/*
  * thread_pool.h — Fixed-size thread pool with work queue
  *
  * Replaces pthread-per-connection with a pool of reusable worker threads.

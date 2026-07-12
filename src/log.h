@@ -4,7 +4,6 @@
  * SPDX-License-Identifier: MIT
  */
 
-
 /*
  * log.h — Thread-safe logger interface
  *

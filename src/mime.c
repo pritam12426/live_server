@@ -1,4 +1,10 @@
 /*
+ * Copyright (c) 2026 Pritam
+ *
+ * SPDX-License-Identifier: MIT
+ */
+
+/*
  * mime.c — MIME type detection by file extension
  */
 
@@ -19,7 +25,7 @@ static const struct {
 	const char *mime;
 } mime_map[] = {
 	/* HTML */
-	{ ".html",  "text/html; charset=utf-8"       },
+	{ ".html",  "text/html; charset=utf-8"        },
 	{ ".htm",   "text/html; charset=utf-8"        },
 
 	/* Stylesheets */

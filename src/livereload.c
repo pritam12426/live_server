@@ -1,4 +1,10 @@
 /*
+ * Copyright (c) 2026 Pritam
+ *
+ * SPDX-License-Identifier: MIT
+ */
+
+/*
  * livereload.c — Server-Sent Events (SSE) live-reload system
  *
  * Maintains a registry of SSE clients using a hash map for O(1) operations,

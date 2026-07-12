@@ -4,7 +4,6 @@
  * SPDX-License-Identifier: MIT
  */
 
-
 #include <argp.h>
 #include <limits.h>
 #include <stdbool.h>

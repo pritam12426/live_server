@@ -1,3 +1,10 @@
+/*
+ * Copyright (c) 2026 Pritam
+ *
+ * SPDX-License-Identifier: MIT
+ */
+
+
 #ifndef _SERVER_H_
 #define _SERVER_H_
 

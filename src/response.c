@@ -1,4 +1,10 @@
 /*
+ * Copyright (c) 2026 Pritam
+ *
+ * SPDX-License-Identifier: MIT
+ */
+
+/*
  * response.c — High-level HTTP response builders
  *
  * Provides functions for sending full HTTP responses (including error
