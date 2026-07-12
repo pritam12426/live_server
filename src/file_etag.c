@@ -6,6 +6,12 @@
 
 /*
  * file_etag.c — ETag generation and comparison
+ *
+ * ETag format: "mtime-hex-size-hex" (both lowercase hex, wrapped in double quotes)
+ * Example: "5f3c2a1b-1000"
+ * - mtime: file modification time as hex
+ * - size:  file size as hex
+ * This format is compact, fast to compute, and changes when either mtime or size changes.
  */
 
 #include "file_etag.h"
@@ -14,6 +20,13 @@
 
 static const char *hex_digits = "0123456789abcdef";
 
+/**
+ * Build an ETag string from file metadata.
+ * Format: "mtime-hex-size-hex" (both lowercase hex, wrapped in quotes).
+ * @param st  stat result containing st_mtime and st_size
+ * @param buf output buffer (must be at least 4 bytes)
+ * @param len size of output buffer
+ */
 void build_etag(const struct stat *st, char *buf, size_t len)
 {
 	if (len < 4) { if (len) *buf = '\0'; return; }
@@ -23,6 +36,7 @@ void build_etag(const struct stat *st, char *buf, size_t len)
 
 	buf[pos++] = '"';
 
+	/* Write mtime as hex (8 bytes for 32-bit, up to 16 for 64-bit) */
 	char mtime_buf[16];
 	int mtime_len = 0;
 	if (mtime == 0) {
@@ -45,6 +59,7 @@ void build_etag(const struct stat *st, char *buf, size_t len)
 	if (pos >= len - 3) { buf[0] = '\0'; return; }
 	buf[pos++] = '-';
 
+	/* Write size as hex */
 	if (size == 0) {
 		buf[pos++] = '0';
 	} else {
@@ -65,6 +80,12 @@ void build_etag(const struct stat *st, char *buf, size_t len)
 	buf[pos] = '\0';
 }
 
+/**
+ * Compare an ETag with If-None-Match header value.
+ * @param etag          generated ETag (quoted)
+ * @param if_none_match value of If-None-Match header (may be unquoted)
+ * @return 1 if they match (indicating 304 Not Modified), 0 otherwise
+ */
 int etag_match(const char *etag, const char *if_none_match)
 {
 	return etag && if_none_match[0] && strcmp(if_none_match, etag) == 0;

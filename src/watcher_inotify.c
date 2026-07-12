@@ -5,7 +5,11 @@
  */
 
 /*
- * watcher_inotify.c — Linux inotify backend
+ * watcher_inotify.c — Linux inotify file watcher backend
+ *
+ * Uses inotify(7) to monitor filesystem events recursively.
+ * Watches root directory and all subdirectories; adds watches dynamically
+ * when new directories are created.
  */
 
 #include "watcher_inotify.h"
@@ -27,14 +31,21 @@
 
 #define INOTIFY_BUF_LEN (4096 * (sizeof(struct inotify_event) + 16 + 1))
 
+/**
+ * Add a single directory to the inotify watch set.
+ * @param w     watcher handle (contains ifd and watch array)
+ * @param path  absolute path of directory to watch
+ * @return watch descriptor on success, -1 on error
+ */
 static int inotify_add_dir(Watcher *w, const char *path)
 {
 	int wd = inotify_add_watch(w->ifd, path,
-							   IN_CREATE | IN_DELETE | IN_MODIFY |
-							   IN_MOVED_FROM | IN_MOVED_TO |
-							   IN_CLOSE_WRITE);
+	                           IN_CREATE | IN_DELETE | IN_MODIFY |
+	                           IN_MOVED_FROM | IN_MOVED_TO |
+	                           IN_CLOSE_WRITE);
 	if (wd < 0) return -1;
 
+	/* Grow watch array if needed */
 	if (w->watch_count >= w->watch_cap) {
 		int new_cap = w->watch_cap ? w->watch_cap * 2 : 64;
 		struct WdEntry *tmp = realloc(w->watches, (size_t)new_cap * sizeof *tmp);
@@ -45,12 +56,18 @@ static int inotify_add_dir(Watcher *w, const char *path)
 
 	w->watches[w->watch_count].wd = wd;
 	snprintf(w->watches[w->watch_count].path,
-			 sizeof w->watches[w->watch_count].path,
-			 "%s", path);
+	         sizeof w->watches[w->watch_count].path,
+	         "%s", path);
 	w->watch_count++;
 	return wd;
 }
 
+/**
+ * Recursively add all directories under path to the inotify watch set.
+ * @param w             watcher handle
+ * @param path          directory to watch
+ * @param ignore_hidden skip dotfiles/directories
+ */
 void watcher_inotify_watch_recursive(Watcher *w, const char *path)
 {
 	inotify_add_dir(w, path);
@@ -73,6 +90,12 @@ void watcher_inotify_watch_recursive(Watcher *w, const char *path)
 	closedir(d);
 }
 
+/**
+ * Look up the directory path for a given inotify watch descriptor.
+ * @param w  watcher handle
+ * @param wd watch descriptor to find
+ * @return directory path, or NULL if not found
+ */
 static const char *inotify_wd_path(Watcher *w, int wd)
 {
 	for (int i = 0; i < w->watch_count; i++)
@@ -81,6 +104,11 @@ static const char *inotify_wd_path(Watcher *w, int wd)
 	return NULL;
 }
 
+/**
+ * Initialize inotify subsystem for a watcher.
+ * @param w watcher handle
+ * @return 0 on success, -1 on failure
+ */
 int watcher_inotify_init(Watcher *w)
 {
 	w->ifd = inotify_init1(IN_NONBLOCK);
@@ -90,12 +118,19 @@ int watcher_inotify_init(Watcher *w)
 	return 0;
 }
 
+/**
+ * Inotify watcher thread: waits for events from inotify or wake pipe.
+ * Calls user callback on filesystem changes.
+ * @param arg watcher handle
+ * @return NULL (thread exit)
+ */
 void *watcher_inotify_thread(void *arg)
 {
 	Watcher *w = arg;
 	char buf[INOTIFY_BUF_LEN] __attribute__((aligned(8)));
 
 	while (atomic_load_explicit(&w->running, memory_order_relaxed)) {
+		/* Wait on inotify fd and wake pipe simultaneously */
 		fd_set rfds;
 		FD_ZERO(&rfds);
 		FD_SET(w->ifd,    &rfds);
@@ -107,10 +142,13 @@ void *watcher_inotify_thread(void *arg)
 		if (ret < 0) break;
 		if (!atomic_load_explicit(&w->running, memory_order_relaxed)) break;
 
+		/* Wake pipe signaled - shutdown requested */
 		if (FD_ISSET(w->wake_rd, &rfds)) break;
 
+		/* Timeout - recheck running flag */
 		if (!FD_ISSET(w->ifd, &rfds)) continue;
 
+		/* Read all available inotify events */
 		ssize_t len = read(w->ifd, buf, sizeof buf);
 		if (len <= 0) continue;
 
@@ -128,15 +166,17 @@ void *watcher_inotify_thread(void *arg)
 			const char *dir = inotify_wd_path(w, ev->wd);
 			if (!dir) continue;
 
+			/* Build full path of changed file/directory */
 			if (ev->len > 0) {
 				(void)snprintf(changed_path, sizeof changed_path,
-							   "%s/%s", dir, ev->name);
+				               "%s/%s", dir, ev->name);
 			} else {
 				(void)snprintf(changed_path, sizeof changed_path, "%s", dir);
 			}
 
+			/* If a new directory was created, add it to watch set */
 			if ((ev->mask & (IN_CREATE | IN_MOVED_TO)) &&
-				ev->len > 0) {
+			    ev->len > 0) {
 				struct stat st;
 				if (stat(changed_path, &st) == 0 && S_ISDIR(st.st_mode))
 					watcher_inotify_watch_recursive(w, changed_path);
@@ -156,6 +196,10 @@ void *watcher_inotify_thread(void *arg)
 	return NULL;
 }
 
+/**
+ * Clean up inotify resources.
+ * @param w watcher handle
+ */
 void watcher_inotify_cleanup(Watcher *w)
 {
 	if (w->ifd >= 0) {

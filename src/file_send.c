@@ -6,6 +6,14 @@
 
 /*
  * file_send.c — File sending with range/sendfile support
+ *
+ * This module handles sending files over HTTP with full semantics:
+ * - ETag/If-None-Match conditional requests (304 Not Modified)
+ * - If-Modified-Since conditional requests (304 Not Modified)
+ * - Range requests (206 Partial Content) with proper Content-Range headers
+ * - sendfile() zero-copy on Linux for non-range GET requests
+ * - LiveReload script injection for HTML files
+ * - Keep-alive connection handling
  */
 
 #include "file_send.h"
@@ -35,6 +43,9 @@
 #include "file_etag.h"
 #include "file_livereload.h"
 
+/**
+ * Format a timestamp as HTTP-date (RFC 7231) in UTC.
+ */
 static void http_date(time_t t, char *buf, size_t len)
 {
 	struct tm tm;
@@ -43,6 +54,10 @@ static void http_date(time_t t, char *buf, size_t len)
 }
 
 #if defined(__linux__)
+/**
+ * Generate current date in RFC 1123 format for HTTP headers (Linux sendfile path).
+ * sendfile() bypasses response_send(), so we build the Date header manually.
+ */
 static void rfc1123_date(char *buf, size_t len)
 {
 	time_t    now = time(NULL);
@@ -52,6 +67,10 @@ static void rfc1123_date(char *buf, size_t len)
 }
 #endif
 
+/**
+ * Log an HTTP request in combined log format.
+ * Extended variant includes response size and MIME type.
+ */
 static void log_request(const char        *client_ip,
                         int                client_port,
                         const HttpRequest *req,
@@ -80,6 +99,28 @@ static void log_request(const char        *client_ip,
 	}
 }
 
+/**
+ * Send a file with full HTTP semantics.
+ *
+ * Handles:
+ *   - ETag generation and If-None-Match matching
+ *   - If-Modified-Since conditional requests
+ *   - Range requests (bytes=start-end) with 206 Partial Content
+ *   - sendfile() zero-copy on Linux for regular GET (no range)
+ *   - LiveReload script injection for text/html
+ *   - Keep-alive vs close Connection header
+ *
+ * @param t                 Transport handle for I/O
+ * @param client_ip         Client IP address (for logging)
+ * @param client_port       Client port (for logging)
+ * @param req               Parsed HTTP request
+ * @param fs_path           Absolute filesystem path to serve
+ * @param pre_stat          Optional pre-stat() result (used for index.html)
+ * @param livereload_mode   LiveReload injection mode
+ * @param print_request     Whether to log this request
+ * @param keep_alive        Whether to send Connection: keep-alive
+ * @return HTTP status code
+ */
 int file_send_file(Transport *t,
                    const char *client_ip,
                    int client_port,
@@ -90,6 +131,7 @@ int file_send_file(Transport *t,
                    int print_request,
                    int keep_alive)
 {
+	/* Use pre-stat result if provided (e.g., for index.html), else stat the file */
 	struct stat st;
 	if (pre_stat) {
 		st = *pre_stat;
@@ -103,12 +145,15 @@ int file_send_file(Transport *t,
 	const char *mime    = mime_from_path(fs_path);
 	int         is_html = (strstr(mime, "text/html") != NULL);
 
+	/* Generate ETag: "mtime-hex-size-hex" (both lowercase hex, quoted) */
 	char etag[64];
 	build_etag(&st, etag, sizeof etag);
 
+	/* Last-Modified header in HTTP-date format */
 	char last_modified[64];
 	http_date(st.st_mtime, last_modified, sizeof last_modified);
 
+	/* If-None-Match: return 304 if ETag matches */
 	if (req->if_none_match[0] && etag_match(etag, req->if_none_match)) {
 		LOG_INFO("%s:%d \"%s\" 304 (ETag match)", client_ip, client_port, req->path);
 		char extra[256];
@@ -119,6 +164,7 @@ int file_send_file(Transport *t,
 		return 304;
 	}
 
+	/* If-Modified-Since: return 304 if file not modified since given date */
 	if (req->if_modified_since[0] && !req->if_none_match[0]) {
 		struct tm tm_ims = { 0 };
 		if (strptime(req->if_modified_since, "%a, %d %b %Y %H:%M:%S GMT", &tm_ims)) {
@@ -143,6 +189,7 @@ int file_send_file(Transport *t,
 	LOG_INFO("%s:%d \"%s %s\" (%s, %ld bytes)",
 	         client_ip, client_port, req->method_str, req->path, mime, file_size);
 
+	/* Open file for reading */
 	int fd = open(fs_path, O_RDONLY);
 	if (fd < 0) {
 		LOG_WARN("Failed to open file: %s (fd=%d)", req->path, transport_fd(t));
@@ -152,6 +199,11 @@ int file_send_file(Transport *t,
 		return 403;
 	}
 
+	/*
+	 * LiveReload injection: for HTML files, inject script before </body>
+	 * This reads the entire file into a thread-local buffer, modifies it,
+	 * then sends via response_send().
+	 */
 	if (is_html && file_livereload_should_inject(mime, livereload_mode)) {
 		LOG_DEBUG("Injecting live-reload script into %s", req->path);
 		size_t script_len = strlen("<script>\n"
@@ -196,23 +248,28 @@ int file_send_file(Transport *t,
 		return 200;
 	}
 
+	/* Parse Range header if present */
 	long range_first = 0, range_last = file_size - 1;
 	int  is_range = 0;
 
 	if (req->range_start != -1) {
 		if (req->range_start < 0) {
+			/* Suffix range: bytes=-N means last N bytes */
 			range_first = file_size + req->range_start;
 			range_last  = file_size - 1;
 		} else {
+			/* Start/end range: bytes=start-end */
 			range_first = (long) req->range_start;
 			range_last  = (req->range_end >= 0) ? (long) req->range_end : file_size - 1;
 		}
 
+		/* Clamp to file boundaries */
 		if (range_first < 0)
 			range_first = 0;
 		if (range_last >= file_size)
 			range_last = file_size - 1;
 
+		/* Validate range */
 		if (range_first > range_last || range_first >= file_size) {
 			close(fd);
 			LOG_WARN("Range not satisfiable: %ld-%ld (file size %ld)",
@@ -234,6 +291,10 @@ int file_send_file(Transport *t,
 	off_t offset = (off_t) range_first;
 
 #if defined(__linux__)
+	/*
+	 * Linux sendfile() path: zero-copy kernel transfer from file to socket.
+	 * Only used for non-range GET requests (HEAD uses fallback).
+	 */
 	if (!is_range && req->method != HTTP_HEAD) {
 		char date[64];
 		rfc1123_date(date, sizeof date);
@@ -262,8 +323,10 @@ int file_send_file(Transport *t,
 		if (hdr_len < 0 || (size_t)hdr_len >= sizeof hdr)
 			hdr_len = (int)(sizeof hdr - 1);
 
+		/* Write header directly via transport */
 		transport_write(t, hdr, (size_t)hdr_len);
 
+		/* sendfile() transfers file data directly in kernel */
 		ssize_t sent = sendfile(transport_fd(t), fd, &offset, (size_t)file_size);
 		close(fd);
 
@@ -278,6 +341,8 @@ int file_send_file(Transport *t,
 	}
 #endif
 
+	/* Fallback path: read into buffer, then send via response_send().
+	 * Used for: range requests, HEAD, non-Linux, or if sendfile unavailable. */
 	if (range_first > 0)
 		lseek(fd, offset, SEEK_SET);
 

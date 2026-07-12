@@ -5,7 +5,10 @@
  */
 
 /*
- * file_path.c — Path resolution and safety
+ * file_path.c — Path resolution and traversal protection
+ *
+ * Resolves request paths to absolute filesystem paths while preventing
+ * directory traversal attacks (../, symlinks outside root, etc.)
  */
 
 #include "file_path.h"
@@ -15,8 +18,15 @@
 #include <string.h>
 #include <unistd.h>
 
+/* Cached absolute root path (resolved once at startup) */
 static char g_real_root[4096];
 
+/**
+ * Resolve and cache the absolute root path.
+ * Called once at startup.
+ * @param root  configured document root
+ * @return 1 on success, 0 on failure
+ */
 int file_path_resolve_root(const char *root)
 {
 	if (realpath(root, g_real_root) == NULL) {
@@ -26,8 +36,18 @@ int file_path_resolve_root(const char *root)
 	return 1;
 }
 
+/**
+ * Safely resolve a URL path to a filesystem path within the document root.
+ * Prevents directory traversal attacks (../, symlinks outside root).
+ * @param root     configured document root
+ * @param url_path request path (e.g., "/images/logo.png")
+ * @param out      output buffer for resolved absolute path
+ * @param out_len  size of output buffer
+ * @return 1 if path is safe and resolved, 0 if traversal detected or error
+ */
 int file_path_safe(const char *root, const char *url_path, char *out, size_t out_len)
 {
+	/* Resolve root on first use */
 	if (g_real_root[0] == '\0') {
 		if (!file_path_resolve_root(root))
 			return 0;
@@ -35,11 +55,13 @@ int file_path_safe(const char *root, const char *url_path, char *out, size_t out
 
 	size_t root_len = strlen(g_real_root);
 
+	/* Try direct realpath resolution first */
 	char tmp[4096];
 	snprintf(tmp, sizeof tmp, "%s%s", root, url_path);
 
 	char resolved[4096];
 	if (realpath(tmp, resolved) != NULL) {
+		/* Verify resolved path is within root */
 		if (strncmp(resolved, g_real_root, root_len) != 0)
 			return 0;
 		if (resolved[root_len] != '/' && resolved[root_len] != '\0')
@@ -48,6 +70,7 @@ int file_path_safe(const char *root, const char *url_path, char *out, size_t out
 		return 1;
 	}
 
+	/* Fallback: resolve directory component, validate filename separately */
 	char path_copy[4096];
 	snprintf(path_copy, sizeof path_copy, "%s", tmp);
 
@@ -65,11 +88,13 @@ int file_path_safe(const char *root, const char *url_path, char *out, size_t out
 	if (realpath(dir_part, resolved_dir) == NULL)
 		return 0;
 
+	/* Verify directory is within root */
 	if (strncmp(resolved_dir, g_real_root, root_len) != 0)
 		return 0;
 	if (resolved_dir[root_len] != '/' && resolved_dir[root_len] != '\0')
 		return 0;
 
+	/* Check filename for .. traversal attempts */
 	const char *p = filename;
 	while ((p = strstr(p, "..")) != NULL) {
 		if ((p == filename || *(p - 1) == '/') &&
