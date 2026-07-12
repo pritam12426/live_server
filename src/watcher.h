@@ -1,26 +1,21 @@
 /*
- * watcher.h — File-system watcher (inotify or poll)
+ * watcher.h — File-system watcher (inotify, kqueue, or poll)
  */
 
 #ifndef _WATCHER_H_
 #define _WATCHER_H_
 
-/* Opaque handle */
-typedef struct Watcher Watcher;
-
-/* Callback invoked when any watched file/directory changes.
- * `path` is the absolute path that changed (may be NULL for poll mode). */
-typedef void (*watcher_cb_t)(const char *path, void *userdata);
+#include "watcher_internal.h"
 
 /*
  * Create a watcher for `root_dir`.
- *   use_poll      - If non-zero, use the poll fallback instead of inotify
+ *   use_poll      - If non-zero, use the poll fallback instead of inotify/kqueue
  *   ignore_hidden - Skip hidden files/dirs (dot-prefixed)
  *   cb            - Called on change
  *   userdata      - Passed through to cb
  *
  * Returns NULL on error.
-*/
+ */
 Watcher *watcher_create(const char   *root_dir,
                           int          use_poll,
                           int          ignore_hidden,
@@ -35,6 +30,5 @@ void watcher_stop(Watcher *w);
 
 /* Free all resources.  Call after watcher_stop(). */
 void watcher_destroy(Watcher *w);
-
 
 #endif  // _WATCHER_H_

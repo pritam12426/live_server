@@ -1,4 +1,11 @@
 /*
+ * Copyright (c) 2026 Pritam
+ *
+ * SPDX-License-Identifier: MIT
+ */
+
+
+/*
  * log.h — Thread-safe logger interface
  *
  * Logging macros:
@@ -59,9 +66,6 @@ void log_record(
 	const char *fmt,
 	...
 );
-
-// Shutdown logger and flush all messages
-void log_shutdown(void);
 
 /* --------------------------------------------------
  * Public logging macros

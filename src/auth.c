@@ -1,4 +1,10 @@
 /*
+ * Copyright (c) 2026 Pritam
+ *
+ * SPDX-License-Identifier: MIT
+ */
+
+/*
  * auth.c — HTTP Basic Authentication
  *
  * Decodes the Base64-encoded "Authorization: Basic …" header

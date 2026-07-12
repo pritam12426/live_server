@@ -1,3 +1,10 @@
+/*
+ * Copyright (c) 2026 Pritam
+ *
+ * SPDX-License-Identifier: MIT
+ */
+
+
 #include <argp.h>
 #include <limits.h>
 #include <stdbool.h>
