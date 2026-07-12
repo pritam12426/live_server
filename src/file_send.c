@@ -80,15 +80,15 @@ static void log_request(const char        *client_ip,
 	}
 }
 
-int file_send_file(Transport          *t,
-              const char        *client_ip,
-              int                client_port,
-              const HttpRequest *req,
-              const char        *fs_path,
-              const struct stat *pre_stat,
-              LivereloadMode     livereload_mode,
-              int                print_request,
-              int                keep_alive)
+int file_send_file(Transport *t,
+                   const char *client_ip,
+                   int client_port,
+                   const HttpRequest *req,
+                   const char *fs_path,
+                   const struct stat *pre_stat,
+                   LivereloadMode livereload_mode,
+                   int print_request,
+                   int keep_alive)
 {
 	struct stat st;
 	if (pre_stat) {
