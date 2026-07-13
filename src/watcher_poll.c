@@ -82,7 +82,7 @@ static unsigned pmap_hash(const char *s)
 void pmap_insert(struct PollMap *m, const char *path, time_t mt)
 {
 	unsigned idx = pmap_hash(path) & (PMAP_SIZE - 1);
-	char k[64];
+	char k[256];
 	snprintf(k, sizeof k, "%s", path);
 	for (int i = 0; i < PMAP_SIZE; i++) {
 		unsigned slot = (idx + (unsigned)i) & (PMAP_SIZE - 1);
@@ -109,7 +109,7 @@ void pmap_insert(struct PollMap *m, const char *path, time_t mt)
 int pmap_get(struct PollMap *m, const char *path, time_t *out_mt)
 {
 	char k[64];
-	(void)snprintf(k, sizeof k, "%s", path);
+	snprintf(k, sizeof k, "%s", path);
 	unsigned idx = pmap_hash(path) & (PMAP_SIZE - 1);
 	for (int i = 0; i < PMAP_SIZE; i++) {
 		unsigned slot = (idx + (unsigned)i) & (PMAP_SIZE - 1);

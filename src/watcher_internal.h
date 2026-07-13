@@ -47,7 +47,7 @@ struct PollState {
 };
 
 struct PollMap {
-	char   keys[4096][64];
+	char   keys[4096][256];
 	time_t vals[4096];
 	int    used[4096];
 };

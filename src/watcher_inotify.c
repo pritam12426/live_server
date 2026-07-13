@@ -169,10 +169,10 @@ void *watcher_inotify_thread(void *arg)
 
 			/* Build full path of changed file/directory */
 			if (ev->len > 0) {
-				(void)snprintf(changed_path, sizeof changed_path,
+				snprintf(changed_path, sizeof changed_path,
 				               "%s/%s", dir, ev->name);
 			} else {
-				(void)snprintf(changed_path, sizeof changed_path, "%s", dir);
+				snprintf(changed_path, sizeof changed_path, "%s", dir);
 			}
 
 			/* If a new directory was created, add it to watch set */

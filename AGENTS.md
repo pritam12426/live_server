@@ -50,4 +50,5 @@ clang-tidy src/*.c -- -Isrc -std=c17
 - `compile_commands.json` is gitignored — regenerate if needed (e.g., via Bear or compiledb).
 - Logging goes to **stderr** with millisecond timestamps and source location (compile-time flags `LOG_SHOW_TIME_STAMP`, `LOG_SHOW_SOURCE_LOCATION`).
 - No CI workflows in repo.
-- Version `1.1.1` in `src/project_config.h`.
+- Version `2.7.1` in `src/project_config.h`.
+- Project homepage: `https://github.com/pritam12426/http_server_c`
