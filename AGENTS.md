@@ -18,6 +18,8 @@ brew install argp-standalone
 
 Binary placed at `./live-server`.
 
+`make help` shows all targets with descriptions.
+
 ## Test
 
 Two separate test suites:
@@ -43,6 +45,23 @@ clang-tidy src/*.c -- -Isrc -std=c17
 - `response.c` handles HTTP response formatting including `Transfer-Encoding: chunked`.
 - No runtime dependencies beyond POSIX + pthreads. No config files or env vars — all config via CLI flags.
 
+## Key source files
+
+| File                                                                      | Responsibility                                          |
+| ------------------------------------------------------------------------- | ------------------------------------------------------- |
+| `main.c`                                                                  | argp CLI parsing, config assembly, `server_run()` entry |
+| `server.c`                                                                | Accept loop, thread pool, keep-alive, rate limiting     |
+| `transport.c`                                                             | Opaque socket wrapper (POSIX)                           |
+| `livereload.c`                                                            | SSE connections, broadcast, HTML injection              |
+| `watcher.c` / `watcher_inotify.c` / `watcher_poll.c` / `watcher_kqueue.c` | File watching backends                                  |
+| `response.c`                                                              | HTTP formatting, chunked encoding                       |
+| `http.c`                                                                  | Request parsing, header handling                        |
+| `file.c` / `file_send.c`                                                  | File serving, range requests, ETags                     |
+| `ratelimit.c`                                                             | Per-IP connection limiting                              |
+| `auth.c`                                                                  | HTTP Basic Auth                                         |
+| `mime.c`                                                                  | MIME type detection                                     |
+| `log.c`                                                                   | Timestamped stderr logging                              |
+
 ## Quirks
 
 - `--live-reload` (`-U`) and `--live-hard-reload` (`-W`) are mutually exclusive.
@@ -52,3 +71,29 @@ clang-tidy src/*.c -- -Isrc -std=c17
 - No CI workflows in repo.
 - Version `2.7.1` in `src/project_config.h`.
 - Project homepage: `https://github.com/pritam12426/http_server_c`
+
+## CLI flags reference (from main.c)
+
+```
+Logging:        -L/--log-level [error|warn|info|debug]  (default: info)
+                -R/--print-request                        Log each request
+Live Reload:    -U/--live-reload                          SSE soft reload
+                -W/--live-hard-reload                     Full cache-busting reload
+Connection:     -P/--port <PORT>          (default: 8080)
+                -H/--host <HOST>          (default: localhost)
+                -T/--threads <NUM>        (default: 2, max 256)
+                -K/--keep-alive <SECS>    (default: 3, 0=disable)
+                -M/--max-conns <NUM>      (default: 0=unlimited, max 1000)
+Authentication: -u/--user <USER>          (default when omitted: admin)
+                -p/--pass <PASS>          (default when omitted: admin)
+Serving:        -I/--dir <DIR>            (default: .)
+                -i/--ignore               Hide hidden files
+                -B/--browser <BROWSER>    Open browser on startup
+                -o/--poll                 Force poll watcher (NFS/sshfs)
+```
+
+## Adding unit tests
+
+1. Create `tests/test_<name>.cpp` using doctest
+2. Run `make -C tests download-doctest` if needed
+3. Run `make test` from repo root

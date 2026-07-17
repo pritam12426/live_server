@@ -163,7 +163,6 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state)
 	case 'i': G_Args.ignore        = true; break;
 	case 'o': G_Args.poll          = true; break;
 	case 'p': {
-
 		// --pass without --user defaults user to "admin"
 		if (arg == NULL) {
 			G_Args.user = "admin";
@@ -191,8 +190,7 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state)
 	}
 	case 'B': G_Args.browser = arg; break;
 	case 'I': G_Args.dir     = arg; break;
-
-	case ARGP_KEY_END:
+	case ARGP_KEY_END: {
 		// Validate argument combinations after all flags are parsed
 		if (G_Args.user != NULL && G_Args.pass == NULL)
 			argp_error(state, "A password must be provided when a username is specified.");
@@ -203,7 +201,7 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state)
 				argp_error(state, "Invalid path '%s': no such directory.", G_Args.dir);
 		}
 		break;
-
+	}
 	default: return ARGP_ERR_UNKNOWN;
 	}
 	return 0;
