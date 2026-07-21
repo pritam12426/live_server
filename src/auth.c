@@ -103,34 +103,34 @@ int auth_check(const HttpRequest *req,
 
 	const char *hdr = req->auth;
 	if (!hdr) {
-		LOG_DEBUG("No Authorization header present");
+		LOG_TRACE("No Authorization header present");
 		return 0;
 	}
-	LOG_DEBUG("Authorization header: %s", hdr);
+	LOG_TRACE("Authorization header: %s", hdr);
 
 	// Must be "Basic …"
 	if (strncasecmp(hdr, "Basic ", 6) != 0) {
-		LOG_DEBUG("Authorization scheme is not Basic (got: %.20s)", hdr);
+		LOG_TRACE("Authorization scheme is not Basic (got: %.20s)", hdr);
 		return 0;
 	}
 
 	// Extract and decode the Base64 payload
 	const char *b64 = hdr + 6;
 	while (*b64 == ' ') b64++;
-	LOG_DEBUG("Base64 credentials: %s", b64);
+	LOG_TRACE("Base64 credentials: %s", b64);
 
 	char decoded[512];
 	int  dec_len = b64_decode(b64, decoded, (int)sizeof decoded);
 	if (dec_len < 0) {
-		LOG_DEBUG("Base64 decode failed");
+		LOG_TRACE("Base64 decode failed");
 		return 0;
 	}
-	LOG_DEBUG("Base64 decoded (%d bytes)", dec_len);
+	LOG_TRACE("Base64 decoded (%d bytes)", dec_len);
 
 	// Split on ":" to get user:pass
 	char *colon = strchr(decoded, ':');
 	if (!colon) {
-		LOG_DEBUG("Decoded credentials missing ':' separator");
+		LOG_TRACE("Decoded credentials missing ':' separator");
 		return 0;
 	}
 	*colon = '\0';

@@ -19,7 +19,7 @@
 
 #define MAIN_BINARY          "live-server"
 
-#define PROJECT_VERSION      "2.7.1"
+#define PROJECT_VERSION      "2.9.1"
 
 #define PROJECT_HOMEPAGE_URL "https://github.com/pritam12426/http_server_c"
 

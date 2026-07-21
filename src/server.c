@@ -97,7 +97,7 @@ static void handle_client(void *arg)
 		}
 
 		if (cfg.print_request) {
-			LOG_CUSTOM(LOG_LEVEL_DEBUG, false,
+			LOG_CUSTOM(LOG_LEVEL_TRACE, false,
 			           "--- Request from %s:%d ---\n%.*s---\n",
 			           client_ip, client_port,
 			           (int)req.raw_len, req.raw);
@@ -177,7 +177,7 @@ static int make_listener(const char *host, int port)
 	struct addrinfo *res = NULL;
 	int rc = getaddrinfo(host, port_str, &hints, &res);
 	if (rc != 0) {
-		LOG_ERROR("getaddrinfo(%s:%d): %s", host, port, gai_strerror(rc));
+		LOG_FATAL("getaddrinfo(%s:%d): %s", host, port, gai_strerror(rc));
 		return -1;
 	}
 
@@ -198,12 +198,12 @@ static int make_listener(const char *host, int port)
 	freeaddrinfo(res);
 
 	if (lfd < 0) {
-		LOG_ERROR("Could not bind to %s:%d", host, port);
+		LOG_FATAL("Could not bind to %s:%d", host, port);
 		return -1;
 	}
 
 	if (listen(lfd, 128) < 0) {
-		LOG_PERROR("listen");
+		LOG_FATAL("listen: %s", strerror(errno));
 		close(lfd);
 		return -1;
 	}
@@ -278,7 +278,7 @@ int server_run(const ServerConfig *cfg)
 
 	ThreadPool *pool = thread_pool_create(cfg->thread_pool_size);
 	if (!pool) {
-		LOG_ERROR("Failed to create thread pool");
+		LOG_FATAL("Failed to create thread pool");
 		close(lfd);
 		return -1;
 	}

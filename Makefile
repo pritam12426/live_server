@@ -38,7 +38,7 @@ CFLAGS +=  -Wall -Wextra -Wpedantic \
            -Wno-missing-field-initializers
 
 # Common flags
-CFLAGS += -Isrc -std=c17 -DLOG_SHOW_TIME_STAMP -DLOG_SHOW_SOURCE_LOCATION
+CFLAGS += -Isrc -std=c17
 LDLIBS +=  -lpthread
 
 # Convert targets to flags for backwards compatibility

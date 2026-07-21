@@ -12,12 +12,13 @@ live-server \- lightweight static file server with live reload
 [\fB\-K\fR|\fB\-\-keep-alive\fR]
 [\fB\-M\fR|\fB\-\-max-conns\fR]
 [\fB\-T\fR|\fB\-\-threads\fR]
+[\fB\-F\fR|\fB\-\-log-file\fR]
 [\fB\-p\fR|\fB\-\-pass\fR]
-[\fB\-p\fR|\fB\-\-pass\fR]
+[\fB\-u\fR|\fB\-\-user\fR]
 [\fB\-B\fR|\fB\-\-browser\fR]
 [\fB\-i\fR|\fB\-\-ignore\fR]
 [\fB\-I\fR|\fB\-\-dir\fR]
-[\fB\-o\fR|\fB\-\-poll\fR]
+[\fB\-O\fR|\fB\-\-poll\fR]
 [\fB\-?\fR|\fB\-\-help\fR]
 [\fB\-\-usage\fR]
 [\fB\-V\fR|\fB\-\-version\fR]
@@ -59,14 +60,14 @@ common values: \fBopen\fR (macOS), \fBxdg-open\fR (Linux), \fBfirefox\fR,
 .\" Concurrency
 .SS "Concurrency"
 .TP
-\fB\-t\fR, \fB\-\-threads\fR \fI<NUM>\fR
-Thread pool size \fI<NUM>\fR. Default: \fB4\fR. Each worker pulls tasks from a
+\fB\-T\fR, \fB\-\-threads\fR \fI<NUM>\fR
+Thread pool size \fI<NUM>\fR. Default: \fB2\fR. Each worker pulls tasks from a
 shared circular queue (4096 slots) protected by a mutex and two condition
 variables. The accept loop blocks when the queue is full, providing natural
 backpressure.
 .TP
-\fB\-k\fR, \fB\-\-keep-alive\fR \fI<SECS>\fR
-Keep-alive timeout in seconds \fI<SECS>\fR. Default: \fB5\fR. A value of 0
+\fB\-K\fR, \fB\-\-keep-alive\fR \fI<SECS>\fR
+Keep-alive timeout in seconds \fI<SECS>\fR. Default: \fB3\fR. A value of 0
 disables keep-alive entirely (each request gets a fresh connection). When
 enabled, the server sets \fBSO_RCVTIMEO\fR on the socket and reuses the
 connection for subsequent requests from the same client.
@@ -99,8 +100,12 @@ and \fBWWW-Authenticate: Basic realm="live-server"\fR.
 .SS "Logging"
 .TP
 \fB\-L\fR, \fB\-\-log-level\fR \fI<LEVEL>\fR
-Log verbosity: \fBerror\fR, \fBwarn\fR, \fBinfo\fR, \fBdebug\fR. Default:
-\fBinfo\fR.
+Log verbosity: \fBoff\fR, \fBfatal\fR, \fBerror\fR, \fBwarn\fR, \fBinfo\fR, \fBdebug\fR,
+\fBtrace\fR. Default: \fBinfo\fR.
+.TP
+\fB\-F\fR, \fB\-\-log-file\fR \fI<FILE>\fR
+Write log output to \fI<FILE>\fR instead of stderr. Colour output is
+automatically disabled for file output.
 .TP
 \fB\-R\fR, \fB\-\-print-request\fR
 Log the full raw request headers (method, path, version, all headers) at
@@ -126,7 +131,7 @@ caching of the injected script.
 .\" File watcher
 .SS "File Watcher"
 .TP
-\fB\-o\fR, \fB\-\-poll\fR
+\fB\-O\fR, \fB\-\-poll\fR
 Force the portable poll-based watcher (500 ms interval) instead of the native
 backend. On Linux the default is \fBinotify\fR; on macOS the default is
 \fBkqueue\fR. The poll watcher snapshots the entire tree and diffs mtimes

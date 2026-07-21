@@ -41,7 +41,7 @@ clang-tidy src/*.c -- -Isrc -std=c17
 - Entry: `src/main.c` → argp CLI parsing → `server_run()`.
 - `transport.c` wraps plain POSIX sockets as an opaque `Transport` type.
 - `server.c` owns the accept loop, thread pool dispatch, keep-alive, and rate limiting.
-- `livereload.c` manages SSE connections and broadcasts; `watcher.c` polls (macOS) or uses inotify (Linux).
+- `livereload.c` manages SSE connections and broadcasts; `watcher.c` uses inotify (Linux), kqueue (macOS), or poll fallback.
 - `response.c` handles HTTP response formatting including `Transfer-Encoding: chunked`.
 - No runtime dependencies beyond POSIX + pthreads. No config files or env vars — all config via CLI flags.
 
@@ -56,7 +56,7 @@ clang-tidy src/*.c -- -Isrc -std=c17
 | `watcher.c` / `watcher_inotify.c` / `watcher_poll.c` / `watcher_kqueue.c` | File watching backends                                  |
 | `response.c`                                                              | HTTP formatting, chunked encoding                       |
 | `http.c`                                                                  | Request parsing, header handling                        |
-| `file.c` / `file_send.c`                                                  | File serving, range requests, ETags                     |
+| `file.c` / `file_send.c` / `file_etag.c` / `file_livereload.c` / `file_path.c` | File serving, range requests, ETags, live-reload inject, path safety |
 | `ratelimit.c`                                                             | Per-IP connection limiting                              |
 | `auth.c`                                                                  | HTTP Basic Auth                                         |
 | `mime.c`                                                                  | MIME type detection                                     |
@@ -65,7 +65,7 @@ clang-tidy src/*.c -- -Isrc -std=c17
 ## Quirks
 
 - `--live-reload` (`-U`) and `--live-hard-reload` (`-W`) are mutually exclusive.
-- macOS always uses poll-based file watcher; Linux uses inotify by default (`--poll` to force poll).
+- macOS uses kqueue by default; Linux uses inotify by default. `--poll` forces poll-based watcher (useful for NFS/sshfs).
 - `compile_commands.json` is gitignored — regenerate if needed (e.g., via Bear or compiledb).
 - Logging goes to **stderr** with millisecond timestamps and source location (compile-time flags `LOG_SHOW_TIME_STAMP`, `LOG_SHOW_SOURCE_LOCATION`).
 - No CI workflows in repo.
@@ -75,7 +75,8 @@ clang-tidy src/*.c -- -Isrc -std=c17
 ## CLI flags reference (from main.c)
 
 ```
-Logging:        -L/--log-level [error|warn|info|debug]  (default: info)
+Logging:        -L/--log-level [off|fatal|error|warn|info|debug|trace]  (default: info)
+                -F/--log-file <FILE>                    Log to file (auto-disables colour)
                 -R/--print-request                        Log each request
 Live Reload:    -U/--live-reload                          SSE soft reload
                 -W/--live-hard-reload                     Full cache-busting reload
@@ -89,7 +90,7 @@ Authentication: -u/--user <USER>          (default when omitted: admin)
 Serving:        -I/--dir <DIR>            (default: .)
                 -i/--ignore               Hide hidden files
                 -B/--browser <BROWSER>    Open browser on startup
-                -o/--poll                 Force poll watcher (NFS/sshfs)
+                -O/--poll                 Force poll watcher (NFS/sshfs)
 ```
 
 ## Adding unit tests

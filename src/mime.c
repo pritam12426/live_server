@@ -116,7 +116,7 @@ const char *mime_from_path(const char *path)
 	// Walk the table until we find a match
 	for (int i = 0; mime_map[i].ext != NULL; i++) {
 		if (strcasecmp(dot, mime_map[i].ext) == 0) {
-			LOG_DEBUG("MIME lookup: %s → %s", path, mime_map[i].mime);
+			LOG_TRACE("MIME lookup: %s → %s", path, mime_map[i].mime);
 			return mime_map[i].mime;
 		}
 	}

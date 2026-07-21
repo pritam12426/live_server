@@ -27,7 +27,8 @@ static char doc[]                    = MAIN_BINARY " - " PROJECT_DESCRIPTION;
 /* ── CLI option table ─────────────────────────────────────────────────────── */
 static struct argp_option options[] = {
 	{ 0, 0, 0, 0, "Logging:", 1 },
-	{ "log-level",      'L', "LEVEL",  0,  "Set log level: [error|warn|info|debug] (default: info)",  1 },
+	{ "log-level",      'L', "LEVEL",  0,  "Set log level: [off|fatal|error|warn|info|debug|trace] (default: info)", 1 },
+	{ "log-file",       'F', "FILE",   0,  "Set logging file"                                                      , 1 },
 	{ "print-request",  'R', 0,        0,  "Log each client request and its headers",                 1 },
 
 	{ 0, 0, 0, 0, "Live Reload:", 2 },
@@ -49,7 +50,7 @@ static struct argp_option options[] = {
 	{ "dir",     'I', "DIR",     0,  "Directory to serve (default: .)",                                    5 },
 	{ "ignore",  'i', 0,         0,  "Hide hidden files and .gitignored entries",                          5 },
 	{ "browser", 'B', "BROWSER", 0,  "Open page in BROWSER on startup (e.g. firefox)",                     5 },
-	{ "poll",    'o', 0,         0,  "Use poll-based watcher instead of inotify (useful over NFS/sshfs)",  5 },
+	{ "poll",    'O', 0,         0,  "Use poll-based watcher instead of inotify (useful over NFS/sshfs)",  5 },
 
 	{ 0 }
 };
@@ -59,6 +60,7 @@ static struct argp_option options[] = {
 typedef struct {
 	// Logging
 	Log_level_t    log_level;      // -L: verbosity threshold
+	const char    *log_file;       // -F: Logging file
 	bool           print_request;  // -R: log every request
 
 	// Live Reload
@@ -125,15 +127,18 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state)
 		break;
 	}
 	case 'L': {
-		// Map string-level to internal enum
-		if      (strcmp(arg, "error") == 0) log_set_level(LOG_LEVEL_ERROR);
+		if      (strcmp(arg, "off")   == 0) log_set_level(LOG_LEVEL_OFF);
+		else if (strcmp(arg, "fatal") == 0) log_set_level(LOG_LEVEL_FATAL);
+		else if (strcmp(arg, "error") == 0) log_set_level(LOG_LEVEL_ERROR);
 		else if (strcmp(arg, "warn")  == 0) log_set_level(LOG_LEVEL_WARN);
 		else if (strcmp(arg, "info")  == 0) log_set_level(LOG_LEVEL_INFO);
 		else if (strcmp(arg, "debug") == 0) log_set_level(LOG_LEVEL_DEBUG);
-		else     argp_error(state, "Invalid log level: '%s'. Use: error, warn, info, debug.", arg);
+		else if (strcmp(arg, "trace") == 0) log_set_level(LOG_LEVEL_TRACE);
+		else     argp_error(state, "Invalid log level: '%s'. Use: off, fatal, error, warn, info, debug, trace.", arg);
 		G_Args.log_level = log_get_level();
 		break;
 	}
+	case 'F': G_Args.log_file      = arg;  break;
 	case 'H': G_Args.host          = arg;  break;
 	case 'R': G_Args.print_request = true; break;
 	case 'T': {
@@ -161,7 +166,7 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state)
 		break;
 	}
 	case 'i': G_Args.ignore        = true; break;
-	case 'o': G_Args.poll          = true; break;
+	case 'O': G_Args.poll          = true; break;
 	case 'p': {
 		// --pass without --user defaults user to "admin"
 		if (arg == NULL) {
@@ -218,7 +223,7 @@ int main(int argc, char *argv[])
 {
 	// Parse CLI args; argp calls parse_opt() for each flag
 	argp_parse(&argp, argc, argv, 0, 0, 0);
-	log_init(NULL);  // Initialise logger (outputs to stderr)
+	log_init(G_Args.log_file, G_Args.log_level, LOG_FLAG_SHOW_TIMESTAMP | LOG_FLAG_SHOW_SOURCE);
 
 	// Dump parsed CLI args when in debug mode — useful for troubleshooting
 	if (log_get_level() == LOG_LEVEL_DEBUG) {

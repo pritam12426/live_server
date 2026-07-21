@@ -72,23 +72,31 @@
 
 ```
 src/
-├── main.c              # Entry point, argp parsing, ServerConfig construction
-├── server.c / .h       # Accept loop, signal handling, thread pool dispatch, keep-alive
-├── transport.c / .h    # Opaque Transport (fd wrapper), read/write/writev, timeouts
-├── http.c / .h         # Request parser (4 KB buffered reads, HttpRequest struct)
-├── response.c / .h     # High-level response builders (error, redirect, send)
-├── header_cache.c / .h # Pre-computed Date/Server/Connection headers (1 Hz update)
-├── file.c / .h         # Static file serving, sendfile, range, ETag, live-reload injection
-├── thread_buffer.c / .h# TLS grow-only body buffers (no malloc/free per request)
-├── auth.c / .h         # Basic Auth (Base64 decode, credential check)
-├── thread_pool.c / .h  # Fixed-size pool, circular queue, mutex + 2 condvars
-├── ratelimit.c / .h    # Dynamic hash table (djb2, linear probe, grows 2× at 75%)
-├── livereload.c / .h   # SSE registry (1024-bucket hash map), broadcast, heartbeat
-├── watcher.c / .h      # File watcher: inotify (Linux) / kqueue (macOS) / poll (fallback)
-├── mime.c / .h         # Extension → MIME lookup (static table, strcasecmp)
-├── log.c / .h          # Lock-free SPSC ring (4096 slots), consumer thread
-├── types.h             # LivereloadMode enum
-└── project_config.h    # VERSION, BINARY_NAME, HOMEPAGE_URL constants
+├── main.c                  # Entry point, argp parsing, ServerConfig construction
+├── server.c / .h           # Accept loop, signal handling, thread pool dispatch, keep-alive
+├── transport.c / .h        # Opaque Transport (fd wrapper), read/write/writev, timeouts
+├── http.c / .h             # Request parser (4 KB buffered reads, HttpRequest struct)
+├── response.c / .h         # High-level response builders (error, redirect, send)
+├── header_cache.c / .h     # Pre-computed Date/Server/Connection headers (1 Hz update)
+├── file.c / .h             # File serving entry point, path safety, directory handling
+├── file_send.c / .h        # File sending with range/sendfile/live-reload injection
+├── file_etag.c / .h        # ETag generation and matching
+├── file_livereload.c / .h  # Live-reload script injection and should-inject check
+├── file_path.c / .h        # Path safety (safe_path, realpath caching)
+├── thread_buffer.c / .h    # TLS grow-only body buffers (no malloc/free per request)
+├── auth.c / .h             # Basic Auth (Base64 decode, credential check)
+├── thread_pool.c / .h      # Fixed-size pool, circular queue, mutex + 2 condvars
+├── ratelimit.c / .h        # Dynamic hash table (djb2, linear probe, grows 2× at 75%)
+├── livereload.c / .h       # SSE registry (1024-bucket hash map), broadcast, heartbeat
+├── watcher.c / .h          # File watcher public API, backend selection
+├── watcher_inotify.c / .h  # Linux inotify backend
+├── watcher_kqueue.c / .h   # macOS kqueue backend
+├── watcher_poll.c / .h     # Portable poll fallback (500ms snapshot diff)
+├── watcher_internal.h      # Shared watcher structs (Watcher, PollMap, PollState)
+├── mime.c / .h             # Extension → MIME lookup (static table, strcasecmp)
+├── log.c / .h              # Mutex-protected ring logger (runtime-configurable levels/flags)
+├── types.h                 # LivereloadMode enum
+└── project_config.h        # VERSION, BINARY_NAME, HOMEPAGE_URL constants
 ```
 
 **No subdirectories.** Flat `src/` with `.c/.h` pairs. `Makefile` uses `$(wildcard src/*.c)`.
@@ -104,7 +112,8 @@ src/
 - `-p` without value → both user/pass = `"admin"`.
 - `--dir` validated against filesystem at parse time (except `"."`).
 - Clamps: threads 1–256, port 1–65535, keep-alive 0–3600, max-conns 0–1000.
-- Calls `log_init(NULL)` → starts consumer thread.
+- `-F`/`--log-file`: log to file (colour auto-disabled). `-o` → `-O` for `--poll`.
+- Calls `log_init(G_Args.log_file, G_Args.log_level, LOG_FLAG_SHOW_TIMESTAMP | LOG_FLAG_SHOW_SOURCE)` → starts consumer thread.
 - Builds `ServerConfig` from `Arguments`, calls `server_run()`.
 
 ### 4.2 `server.c` — Server Core
@@ -139,7 +148,7 @@ struct Transport { int fd; };  // opaque to callers
 ### 4.5 `header_cache.c` — Static Header Components
 
 - **Date**: `time()` + `gmtime_r()` + `strftime()` once/sec (double-checked locking with `pthread_mutex`).
-- **Server**: `"Server: live-server/2.7.0\r\n"` built once at init.
+- **Server**: `"Server: live-server/2.7.1\r\n"` built once at init.
 - **Connection**: two static strings (`keep-alive` / `close`).
 - `header_cache_build()`: single `snprintf` merges all pieces.
 
@@ -167,7 +176,7 @@ struct Transport { int fd; };  // opaque to callers
    - **Linux `sendfile()`** (non-range GET): writes header via `transport_write()`, then `sendfile()` kernel→socket. Falls back to read/write for range/HEAD/non-Linux.
    - **Fallback path**: reads into thread-local buffer, `response_send()` with `writev()`.
 
-**Access logging**: `LOG_INFO` with IP, method, path, version, status, bytes, MIME. `--print-request` → raw headers at `LOG_DEBUG`.
+**Access logging**: `LOG_INFO` with IP, method, path, version, status, bytes, MIME. `--print-request` → raw headers at `LOG_TRACE`.
 
 ### 4.8 `thread_buffer.c` — TLS Reusable Buffers
 
@@ -251,15 +260,17 @@ struct Transport { int fd; };  // opaque to callers
 - Fallback: `application/octet-stream`.
 - Covers: HTML, CSS, JS/TS, JSON, XML, images (PNG, JPEG, GIF, ICO, WebP, AVIF, BMP, TIFF, SVG), fonts (WOFF, WOFF2, TTF, OTF), audio (MP3, OGG, Opus, WAV, FLAC, AAC), video (MP4, WebM, OGV, MOV, AVI), text (TXT, MD, CSV), PDF, archives (ZIP, GZ, TAR), WASM.
 
-### 4.15 `log.c` — Lock-Free Ring Logger
+### 4.15 `log.c` — Ring Logger
 
-- **Levels**: `LOG_LEVEL_ERROR` (0), `WARN` (1), `INFO` (2), `DEBUG` (3).
+- **Levels**: `LOG_LEVEL_OFF` (0), `FATAL` (1), `ERROR` (2), `WARN` (3), `INFO` (4), `DEBUG` (5), `TRACE` (6).
+- **Feature flags**: `LOG_FLAG_SHOW_TIMESTAMP`, `LOG_FLAG_SHOW_SOURCE` — bitmask passed to `log_init()`.
 - **Ring**: 4096 `LogSlot { char buf[256]; int len; atomic_int ready; }`.
-- **Producers (workers)**: `atomic_fetch_add(&head, 1)` → format full line (timestamp, level, file:line, message) into slot → `atomic_store(&slot.ready, 1)`.
+- **Producers (workers)**: `atomic_fetch_add(&head, 1)` → format full line into slot → `atomic_store(&slot.ready, 1)`.
 - **Consumer (dedicated thread)**: busy-waits `ready` flag → `fwrite()` batch → `fflush()`.
-- **Timestamp**: captured at call site (accurate), not in consumer.
+- **Timestamp/source**: runtime-controlled via `g_log_flags`, not compile-time `#ifdef`.
 - **Colours**: ANSI auto-detected via `isatty(fileno(stderr))`. File output → no colours.
-- **Macros**: `LOG_ERROR()`, `LOG_WARN()`, `LOG_INFO()`, `LOG_DEBUG()`, `LOG_PERROR()` (adds `strerror(errno)`).
+- **C++ compatible**: `extern "C"` guard in `log.h`.
+- **Macros**: `LOG_FATAL()`, `LOG_ERROR()`, `LOG_WARN()`, `LOG_INFO()`, `LOG_DEBUG()`, `LOG_TRACE()`, `LOG_PERROR()` (adds `strerror(errno)`).
 
 ---
 
@@ -306,8 +317,7 @@ Worker thread:
 CC = clang
 CFLAGS = -Wall -Wextra -Wpedantic -Wstrict-prototypes -Wmissing-prototypes \
          -Wshadow -Wconversion -Wno-missing-field-initializers -std=c17 -Isrc
-# Compile-time log features (always on):
-CFLAGS += -DLOG_SHOW_TIME_STAMP -DLOG_SHOW_SOURCE_LOCATION
+# Log timestamp/source are runtime-configurable (via Log_flags_t), not compile-time
 
 # macOS
 LDFLAGS += -largp
@@ -344,7 +354,7 @@ sudo make install PREFIX=~/.local  # ~/.local/bin
 | Unit        | `make test`                                    | `mime_from_path()` — 54 assertions (extensions, case-insensitivity, fallback, edge cases)                                                             |
 | Integration | `bash tests/test_server.sh ./live-server 9999` | 23 tests: 200/301/304/404/405/416, ETag, ranges, keep-alive headers, Basic Auth (missing/correct), path traversal (3 variants), `--help`, `--version` |
 
-**Test server flags**: `-L error -T 2 -K 5` (quiet, 2 threads, 5s keep-alive).
+**Test server flags**: `-L error -T 2 -K 3` (quiet, 2 threads, 3s keep-alive).
 
 ---
 
@@ -401,10 +411,11 @@ sudo make install PREFIX=~/.local  # ~/.local/bin
 
 ---
 
-## 11. Version History (Current: 2.7.0)
+## 11. Version History (Current: 2.7.1)
 
 | Version | Changes                                                                                                                                                                                                                              |
 | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 2.7.1   | Runtime-configurable log levels/flags (FATAL, TRACE, OFF), `-F`/`--log-file`, `--poll` short flag `-o`→`-O`, LOG_FATAL for critical startup failures, all per-request tracing moved to LOG_TRACE, file serving split into file_send/file_etag/file_livereload/file_path, `extern "C"` in log.h |
 | 2.7.0   | kqueue backend (macOS), heap PollMap, full-path poll keys, double ratelimit_leave fix, FD leak fix, snprintf guards, build_etag bounds, ratelimit integer math, zero warnings under ASan+UBSan, DEV.md rewrite, D2 diagrams, manpage |
 | 2.x     | sendfile, writev, header_cache, thread_buffer, dynamic ratelimit, SSE hash map, lock-free logger, buffered reads, single-pass body scan, cached realpath, poll O(N) diff                                                             |
 
@@ -412,16 +423,17 @@ sudo make install PREFIX=~/.local  # ~/.local/bin
 
 ## 12. Files an Agent Might Need to Touch
 
-| Task                          | Files                                                                                          |
-| ----------------------------- | ---------------------------------------------------------------------------------------------- |
-| Add CLI flag                  | `main.c` (argp options + `parse_opt`), `server.h` (ServerConfig), `server.c` (config plumbing) |
-| New MIME type                 | `mime.c` (table entry)                                                                         |
-| New log level                 | `log.h` (enum), `log.c` (macro + colour)                                                       |
-| New watcher backend           | `watcher.c` (new `#elif` block + thread fn), `watcher.h` (if new struct fields)                |
-| Change thread pool queue size | `thread_pool.c` (QUEUE_CAPACITY)                                                               |
-| Adjust rate limiter growth    | `ratelimit.c` (RL_INITIAL_SIZE, RL_MAX_LOAD_FACTOR, RL_GROWTH_FACTOR)                          |
-| Modify live-reload script     | `file.c` (LIVERELOAD_SCRIPT constant)                                                          |
-| Add response header           | `header_cache.c` (if static) or `response.c` (if dynamic)                                      |
+| Task                          | Files                                                                                                      |
+| ----------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| Add CLI flag                  | `main.c` (argp options + `parse_opt`), `server.h` (ServerConfig), `server.c` (config plumbing)             |
+| New MIME type                 | `mime.c` (table entry)                                                                                     |
+| New log level                 | `log.h` (enum + macro), `log.c` (colour handler in both `default_log_handler` and `color_log_handler`)     |
+| New watcher backend           | `watcher.c` (new `#elif` block + thread fn), `watcher_internal.h` (if new struct fields)                   |
+| Change thread pool queue size | `thread_pool.c` (QUEUE_CAPACITY)                                                                           |
+| Adjust rate limiter growth    | `ratelimit.c` (RL_INITIAL_SIZE, RL_MAX_LOAD_FACTOR, RL_GROWTH_FACTOR)                                      |
+| Modify live-reload script     | `file_livereload.c` (injection logic and script constant)                                                  |
+| Add response header           | `header_cache.c` (if static) or `response.c` (if dynamic)                                                  |
+| Add LOG_FATAL usage           | `server.c` (startup failures in `make_listener`, `thread_pool_create`)                                      |
 
 ---
 

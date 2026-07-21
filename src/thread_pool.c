@@ -60,7 +60,7 @@ static void *worker_loop(void *arg)
 		pthread_cond_signal(&pool->not_full);
 		pthread_mutex_unlock(&pool->lock);
 
-		LOG_DEBUG("Worker picked up task (queue depth: %d)", depth);
+		LOG_TRACE("Worker picked up task (queue depth: %d)", depth);
 		task.func(task.arg);
 	}
 
@@ -121,7 +121,7 @@ void thread_pool_submit(ThreadPool *pool, ThreadTaskFunc func, void *arg)
 	pool->tail = (pool->tail + 1) % QUEUE_CAPACITY;
 	pool->count++;
 
-	LOG_DEBUG("Task submitted to pool (queue depth: %d)", pool->count);
+	LOG_TRACE("Task submitted to pool (queue depth: %d)", pool->count);
 
 	pthread_cond_signal(&pool->not_empty);
 	pthread_mutex_unlock(&pool->lock);

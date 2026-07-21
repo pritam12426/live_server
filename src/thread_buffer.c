@@ -33,7 +33,7 @@ static ThreadBuffers *get_tls_buffers(void)
 	if (!g_tls_buffers) {
 		g_tls_buffers = calloc(1, sizeof(ThreadBuffers));
 		if (!g_tls_buffers) return NULL;
-		LOG_DEBUG("TLS buffer state allocated for thread");
+		LOG_TRACE("TLS buffer state allocated for thread");
 	}
 	return g_tls_buffers;
 }
@@ -57,7 +57,7 @@ char *thread_buffer_get_body(size_t min_size)
 
 		tb->body_buf = new_buf;
 		tb->body_cap = new_cap;
-		LOG_DEBUG("TLS body buffer grown to %zu bytes", new_cap);
+		LOG_TRACE("TLS body buffer grown to %zu bytes", new_cap);
 	}
 	return tb->body_buf;
 }
@@ -66,7 +66,7 @@ char *thread_buffer_get_body(size_t min_size)
 void thread_buffer_cleanup(void)
 {
 	if (g_tls_buffers) {
-		LOG_DEBUG("Cleaning up TLS buffers (body cap: %zu)", g_tls_buffers->body_cap);
+		LOG_TRACE("Cleaning up TLS buffers (body cap: %zu)", g_tls_buffers->body_cap);
 		free(g_tls_buffers->body_buf);
 		free(g_tls_buffers);
 		g_tls_buffers = NULL;

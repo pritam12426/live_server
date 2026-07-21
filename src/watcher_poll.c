@@ -108,7 +108,7 @@ void pmap_insert(struct PollMap *m, const char *path, time_t mt)
  */
 int pmap_get(struct PollMap *m, const char *path, time_t *out_mt)
 {
-	char k[64];
+	char k[4096];
 	snprintf(k, sizeof k, "%s", path);
 	unsigned idx = pmap_hash(path) & (PMAP_SIZE - 1);
 	for (int i = 0; i < PMAP_SIZE; i++) {
@@ -208,7 +208,7 @@ void *poll_thread(void *arg)
 
 	/* Take initial snapshot */
 	poll_snapshot(&prev, w->root, w->ignore_hidden);
-	LOG_DEBUG("Poll watcher initial snapshot: %d entries", prev.count);
+	LOG_TRACE("Poll watcher initial snapshot: %d entries", prev.count);
 
 	/* Build initial hash map for O(1) lookups */
 	for (int i = 0; i < prev.count; i++)

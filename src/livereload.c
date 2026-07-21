@@ -268,7 +268,7 @@ void livereload_handle_sse(Transport *t)
 			LOG_DEBUG("SSE client fd=%d disconnected", fd);
 			break;
 		}
-		LOG_DEBUG("SSE heartbeat sent to fd=%d", fd);
+		LOG_TRACE("SSE heartbeat sent to fd=%d", fd);
 	}
 
 	lr_remove_client(fd);

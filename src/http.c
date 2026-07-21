@@ -166,16 +166,16 @@ static void parse_header(char *line, HttpRequest *r)
 	if (strcmp(lname, "host") == 0) {
 		snprintf(r->host, sizeof(r->host), "%s", value);
 	} else if (strcmp(lname, "authorization") == 0) {
-		LOG_DEBUG("Header: Authorization: Basic ****");
+		LOG_TRACE("Header: Authorization: Basic ****");
 		snprintf(r->auth, sizeof(r->auth), "%s", value);
 	} else if (strcmp(lname, "connection") == 0) {
-		LOG_DEBUG("Header: Connection: %s", value);
+		LOG_TRACE("Header: Connection: %s", value);
 		snprintf(r->connection, sizeof(r->connection), "%s", value);
 	} else if (strcmp(lname, "if-none-match") == 0) {
-		LOG_DEBUG("Header: If-None-Match: %s", value);
+		LOG_TRACE("Header: If-None-Match: %s", value);
 		snprintf(r->if_none_match, sizeof(r->if_none_match), "%s", value);
 	} else if (strcmp(lname, "if-modified-since") == 0) {
-		LOG_DEBUG("Header: If-Modified-Since: %s", value);
+		LOG_TRACE("Header: If-Modified-Since: %s", value);
 		snprintf(r->if_modified_since, sizeof(r->if_modified_since), "%s", value);
 	} else if (strcmp(lname, "range") == 0) {
 		// Parse "bytes=start-end" — supports both "bytes=N-" and "bytes=N-M"
@@ -196,7 +196,7 @@ static void parse_header(char *line, HttpRequest *r)
 					if (errno != 0)
 						r->range_end = -1;
 				}
-				LOG_DEBUG("Header: Range: bytes=%lld-%lld",
+				LOG_TRACE("Header: Range: bytes=%lld-%lld",
 				          (long long)r->range_start, (long long)r->range_end);
 			}
 		}

@@ -67,13 +67,14 @@ make install
 | `--keep-alive`       | `-k`  | `5`         | Keep-alive timeout (0 = off)                             |
 | `--max-conns`        | `-M`  | `0`         | Max concurrent conns/IP (0 = unlimited)                  |
 | `--browser`          | `-B`  | —           | Open browser on start (`open`, `xdg-open`, `firefox`, …) |
-| `--log-level`        | `-L`  | `info`      | `error` \| `warn` \| `info` \| `debug`                   |
+| `--log-level`        | `-L`  | `info`      | `off` \| `fatal` \| `error` \| `warn` \| `info` \| `debug` \| `trace` |
+| `--log-file`         | `-F`  | —           | Log to file (colour auto-disabled)                       |
 | `--print-request`    | `-R`  | —           | Log full request headers                                 |
 | `--live-reload`      | `-U`  | —           | Soft reload on file change                               |
 | `--live-hard-reload` | `-W`  | —           | Hard reload (cache-bust)                                 |
 | `--user`             | `-u`  | `admin`     | Basic Auth username                                      |
 | `--pass`             | `-p`  | `admin`     | Basic Auth password                                      |
-| `--poll`             | `-o`  | —           | Force poll watcher (Linux)                               |
+| `--poll`             | `-O`  | —           | Force poll watcher (Linux)                               |
 | `--ignore`           | `-i`  | —           | Skip hidden files in watcher                             |
 
 > `-U` and `-W` are mutually exclusive.

@@ -8,24 +8,20 @@
  * log.c — Thread-safe logging implementation
  *
  * Supports:
- *   - Four log levels: ERROR, WARN, INFO, DEBUG
- *   - Optional timestamps with microsecond precision (LOG_SHOW_TIME_STAMP)
- *   - Optional source-file location (LOG_SHOW_SOURCE_LOCATION)
+ *   - Six log levels: FATAL, ERROR, WARN, INFO, DEBUG, TRACE
+ *   - Runtime-configurable timestamps and source location (via Log_flags_t)
  *   - ANSI colour output when writing to a TTY
- *   - File output via log_init(path)
- *   - Full thread safety via pthread_rwlock
+ *   - File output via log_init(path, level, flags)
+ *   - Full thread safety via pthread_mutex
  */
 
 #include "log.h"
 
-#include <pthread.h>
-#include <stdarg.h>
-#include <stdio.h>
-#include <unistd.h>  // isatty(), fileno()
-
-#ifdef LOG_SHOW_TIME_STAMP
-	#include <time.h>
-#endif  // LOG_SHOW_TIME_STAMP
+#include <pthread.h>  // pthread_mutex_t, pthread_mutex_lock(), pthread_mutex_unlock()
+#include <stdarg.h>   // va_list, va_start(), va_end()
+#include <stdio.h>    // fprintf(), fopen(), fclose(), fflush(), vfprintf(), stderr
+#include <time.h>     // clock_gettime(), localtime_r(), strftime()
+#include <unistd.h>   // isatty(), fileno()
 
 
 // ANSI colour codes
@@ -45,10 +41,11 @@
 // Since log_record() always takes a write-lock (to prevent interleaved output),
 // a plain mutex is simpler and slightly faster than a rwlock.
 
-static pthread_mutex_t  g_log_mutex  = PTHREAD_MUTEX_INITIALIZER;
-static Log_level_t      g_log_level  = LOG_LEVEL_INFO;
-static FILE            *g_log_stream = NULL;  // NULL = not yet initialised
-static bool             g_use_color  = false;
+static pthread_mutex_t g_log_mutex  = PTHREAD_MUTEX_INITIALIZER;
+static Log_level_t     g_log_level  = LOG_LEVEL_INFO;
+static Log_flags_t     g_log_flags  = LOG_FLAG_NONE;
+static FILE           *g_log_stream = NULL;  // NULL = not yet initialised
+static bool            g_use_color  = false;
 
 
 // ── Internal helpers (called with read-lock already held) ─────────────────────
@@ -57,10 +54,12 @@ static bool             g_use_color  = false;
 static void default_log_handler(FILE *out, Log_level_t level)
 {
 	switch (level) {
-		case LOG_LEVEL_INFO:  fprintf(out, "[INFO ] "); break;
-		case LOG_LEVEL_WARN:  fprintf(out, "[WARN ] "); break;
+		case LOG_LEVEL_FATAL: fprintf(out, "[FATAL] "); break;
 		case LOG_LEVEL_ERROR: fprintf(out, "[ERROR] "); break;
+		case LOG_LEVEL_WARN:  fprintf(out, "[WARN ] "); break;
+		case LOG_LEVEL_INFO:  fprintf(out, "[INFO ] "); break;
 		case LOG_LEVEL_DEBUG: fprintf(out, "[DEBUG] "); break;
+		case LOG_LEVEL_TRACE: fprintf(out, "[TRACE] "); break;
 		default:              fprintf(out, "[UNKWN] "); break;
 	}
 }
@@ -69,26 +68,30 @@ static void default_log_handler(FILE *out, Log_level_t level)
 static void color_log_handler(FILE *out, Log_level_t level)
 {
 	switch (level) {
-		case LOG_LEVEL_ERROR:
-			fprintf(out, "🚨 [" COLOR_BOLD_RED    "ERROR" COLOR_RESET "] ");
-			break;
-		case LOG_LEVEL_WARN:
-			fprintf(out, "⚠️  [" COLOR_BOLD_YELLOW "WARN " COLOR_RESET "] ");
-			break;
-		case LOG_LEVEL_INFO:
-			fprintf(out, "ℹ️  [" COLOR_BOLD_GREEN  "INFO " COLOR_RESET "] ");
-			break;
-		case LOG_LEVEL_DEBUG:
-			fprintf(out, "🛠️  [" COLOR_BOLD_CYAN   "DEBUG" COLOR_RESET "] ");
-			break;
-		default:
-			fprintf(out, "[UNKWN] ");
-			break;
+	case LOG_LEVEL_FATAL:
+		fprintf(out, "💀 [" COLOR_BOLD_BLUE "FATAL" COLOR_RESET "] ");
+		break;
+	case LOG_LEVEL_ERROR:
+		fprintf(out, "🚨 [" COLOR_BOLD_RED "ERROR" COLOR_RESET "] ");
+		break;
+	case LOG_LEVEL_WARN:
+		fprintf(out, "⚠️  [" COLOR_BOLD_YELLOW "WARN " COLOR_RESET "] ");
+		break;
+	case LOG_LEVEL_INFO:
+		fprintf(out, "ℹ️  [" COLOR_BOLD_GREEN "INFO " COLOR_RESET "] ");
+		break;
+	case LOG_LEVEL_DEBUG:
+		fprintf(out, "🛠️  [" COLOR_BOLD_CYAN "DEBUG" COLOR_RESET "] ");
+		break;
+	case LOG_LEVEL_TRACE:
+		fprintf(out, "🔬 [" COLOR_BOLD_MAGENTA "TRACE" COLOR_RESET "] ");
+		break;
+	default:
+		fprintf(out, "[" COLOR_BOLD_BLUE "UNKWN" COLOR_RESET "] ");
+		break;
 	}
 }
 
-
-#ifdef LOG_SHOW_TIME_STAMP
 
 // Print a microsecond-precision timestamp at the start of each log line
 static void log_time_stamp_handler(FILE *out, bool use_color)
@@ -111,16 +114,16 @@ static void log_time_stamp_handler(FILE *out, bool use_color)
 		fprintf(out, COLOR_RESET);
 }
 
-#endif  // LOG_SHOW_TIME_STAMP
-
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
 // Initialise the logger.
 //   file_path: path to log file (NULL = stderr).
 //              Colour is auto-disabled for file output.
+//   level:     initial log level filter.
+//   flags:     bitmask of Log_flags_t features to enable.
 // Thread-safe; can be called multiple times (e.g. for log rotation).
-void log_init(const char *file_path)
+void log_init(const char *file_path, Log_level_t level, Log_flags_t flags)
 {
 	// Resolve the new stream and color flag BEFORE taking the lock,
 	// so we hold the write-lock for the shortest possible time.
@@ -154,6 +157,8 @@ void log_init(const char *file_path)
 
 		g_log_stream = new_stream;
 		g_use_color  = new_color;
+		g_log_level  = level;
+		g_log_flags  = flags;
 	}
 	pthread_mutex_unlock(&g_log_mutex);
 }
@@ -199,7 +204,7 @@ FILE *log_get_file(void)
 
 
 // Core logging function: formats and writes a log message.
-// Called by the LOG_* macros.  Thread-safe via reader-writer lock.
+// Called by the LOG_* macros.  Thread-safe via mutex.
 void log_record(Log_level_t level,
                 const char *file __attribute__((unused)),
                 int         line __attribute__((unused)),
@@ -211,7 +216,7 @@ void log_record(Log_level_t level,
 	if (fmt == NULL) return;
 
 	if (g_log_stream == NULL) {
-		fprintf(stderr, COLOR_BOLD_RED "[LOG] error: call log_init() before logging" COLOR_RESET);
+		fprintf(stderr, COLOR_BOLD_RED "[LOG] error: log_init() not called — dropping message" COLOR_RESET);
 		if (new_line) fputc('\n', stderr);
 		return;
 	}
@@ -226,16 +231,15 @@ void log_record(Log_level_t level,
 			return;
 		}
 
-#ifdef LOG_SHOW_TIME_STAMP
-		log_time_stamp_handler(g_log_stream, g_use_color);
-#endif  // LOG_SHOW_TIME_STAMP
+		if (g_log_flags & LOG_FLAG_SHOW_TIMESTAMP)
+			log_time_stamp_handler(g_log_stream, g_use_color);
 
 		if (g_use_color)
 			color_log_handler(g_log_stream, level);
 		else
 			default_log_handler(g_log_stream, level);
 
-		if (file) {
+		if ((g_log_flags & LOG_FLAG_SHOW_SOURCE) && file) {
 			fprintf(g_log_stream,
 			        "%s[%s:%d:%s]%s ",
 			        g_use_color ? COLOR_DIM : "",

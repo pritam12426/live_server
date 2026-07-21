@@ -233,7 +233,8 @@ int file_send_file(Transport *t,
 		body[body_len]  = '\0';
 
 		size_t out_len = 0;
-		file_livereload_inject(body, body_len, body, 4096, &out_len);
+		size_t buf_cap = (size_t) file_size + script_len + 32;
+		file_livereload_inject(body, body_len, body, buf_cap, &out_len);
 
 		char extra[512];
 		snprintf(extra,

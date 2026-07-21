@@ -157,7 +157,7 @@ void ratelimit_leave(RateLimit *rl, const char *ip)
 		size_t slot = (idx + i) % rl->table_size;
 		if (rl->table[slot].count > 0 && strcmp(rl->table[slot].ip, ip) == 0) {
 			rl->table[slot].count--;
-			LOG_DEBUG("Rate limit leave: %s (count=%d)", ip, rl->table[slot].count);
+			LOG_TRACE("Rate limit leave: %s (count=%d)", ip, rl->table[slot].count);
 			if (rl->table[slot].count == 0) {
 				free(rl->table[slot].ip);
 				rl->table[slot].ip = NULL;
@@ -174,6 +174,8 @@ void ratelimit_destroy(RateLimit *rl)
 {
 	if (!rl) return;
 
+	pthread_mutex_lock(&rl->lock);
+
 	// Free all IP strings
 	for (size_t i = 0; i < rl->table_size; i++) {
 		if (rl->table[i].ip) {
@@ -182,6 +184,7 @@ void ratelimit_destroy(RateLimit *rl)
 	}
 
 	free(rl->table);
+	pthread_mutex_unlock(&rl->lock);
 	pthread_mutex_destroy(&rl->lock);
 	free(rl);
 	LOG_DEBUG("Rate limit destroyed");
