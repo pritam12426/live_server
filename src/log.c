@@ -1,18 +1,12 @@
 /*
- * Copyright (c) 2026 Pritam
- *
- * SPDX-License-Identifier: MIT
- */
-
-/*
  * log.c — Thread-safe logging implementation
  *
- * Supports:
+ * Features:
  *   - Six log levels: FATAL, ERROR, WARN, INFO, DEBUG, TRACE
- *   - Runtime-configurable timestamps and source location (via Log_flags_t)
- *   - ANSI colour output when writing to a TTY
- *   - File output via log_init(path, level, flags)
- *   - Full thread safety via pthread_mutex
+ *   - Compile-time timestamps (-DLOG_SHOW_TIME_STAMP)
+ *   - Compile-time source location (-DLOG_SHOW_SOURCE_LOCATION)
+ *   - ANSI colour output (auto-disabled for file output)
+ *   - Thread safety via pthread_mutex
  */
 
 #include "log.h"
@@ -20,8 +14,11 @@
 #include <pthread.h>  // pthread_mutex_t, pthread_mutex_lock(), pthread_mutex_unlock()
 #include <stdarg.h>   // va_list, va_start(), va_end()
 #include <stdio.h>    // fprintf(), fopen(), fclose(), fflush(), vfprintf(), stderr
-#include <time.h>     // clock_gettime(), localtime_r(), strftime()
 #include <unistd.h>   // isatty(), fileno()
+
+#ifdef LOG_SHOW_TIME_STAMP
+#include <time.h>     // clock_gettime(), localtime_r(), strftime()
+#endif  // LOG_SHOW_TIME_STAMP
 
 
 // ANSI colour codes
@@ -43,7 +40,6 @@
 
 static pthread_mutex_t g_log_mutex  = PTHREAD_MUTEX_INITIALIZER;
 static Log_level_t     g_log_level  = LOG_LEVEL_INFO;
-static Log_flags_t     g_log_flags  = LOG_FLAG_NONE;
 static FILE           *g_log_stream = NULL;  // NULL = not yet initialised
 static bool            g_use_color  = false;
 
@@ -68,30 +64,32 @@ static void default_log_handler(FILE *out, Log_level_t level)
 static void color_log_handler(FILE *out, Log_level_t level)
 {
 	switch (level) {
-	case LOG_LEVEL_FATAL:
-		fprintf(out, "💀 [" COLOR_BOLD_BLUE "FATAL" COLOR_RESET "] ");
-		break;
-	case LOG_LEVEL_ERROR:
-		fprintf(out, "🚨 [" COLOR_BOLD_RED "ERROR" COLOR_RESET "] ");
-		break;
-	case LOG_LEVEL_WARN:
-		fprintf(out, "⚠️  [" COLOR_BOLD_YELLOW "WARN " COLOR_RESET "] ");
-		break;
-	case LOG_LEVEL_INFO:
-		fprintf(out, "ℹ️  [" COLOR_BOLD_GREEN "INFO " COLOR_RESET "] ");
-		break;
-	case LOG_LEVEL_DEBUG:
-		fprintf(out, "🛠️  [" COLOR_BOLD_CYAN "DEBUG" COLOR_RESET "] ");
-		break;
-	case LOG_LEVEL_TRACE:
-		fprintf(out, "🔬 [" COLOR_BOLD_MAGENTA "TRACE" COLOR_RESET "] ");
-		break;
-	default:
-		fprintf(out, "[" COLOR_BOLD_BLUE "UNKWN" COLOR_RESET "] ");
-		break;
+		case LOG_LEVEL_FATAL:
+			fprintf(out, "💀 [" COLOR_BOLD_BLUE "FATAL" COLOR_RESET "] ");
+			break;
+		case LOG_LEVEL_ERROR:
+			fprintf(out, "🚨 [" COLOR_BOLD_RED "ERROR" COLOR_RESET "] ");
+			break;
+		case LOG_LEVEL_WARN:
+			fprintf(out, "⚠️  [" COLOR_BOLD_YELLOW "WARN " COLOR_RESET "] ");
+			break;
+		case LOG_LEVEL_INFO:
+			fprintf(out, "ℹ️  [" COLOR_BOLD_GREEN "INFO " COLOR_RESET "] ");
+			break;
+		case LOG_LEVEL_DEBUG:
+			fprintf(out, "🛠️  [" COLOR_BOLD_CYAN "DEBUG" COLOR_RESET "] ");
+			break;
+		case LOG_LEVEL_TRACE:
+			fprintf(out, "🔬 [" COLOR_BOLD_MAGENTA "TRACE" COLOR_RESET "] ");
+			break;
+		default:
+			fprintf(out, "[" COLOR_BOLD_BLUE "UNKWN" COLOR_RESET "] ");
+			break;
 	}
 }
 
+
+#ifdef LOG_SHOW_TIME_STAMP
 
 // Print a microsecond-precision timestamp at the start of each log line
 static void log_time_stamp_handler(FILE *out, bool use_color)
@@ -114,16 +112,15 @@ static void log_time_stamp_handler(FILE *out, bool use_color)
 		fprintf(out, COLOR_RESET);
 }
 
+#endif  // LOG_SHOW_TIME_STAMP
+
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
-// Initialise the logger.
-//   file_path: path to log file (NULL = stderr).
-//              Colour is auto-disabled for file output.
-//   level:     initial log level filter.
-//   flags:     bitmask of Log_flags_t features to enable.
-// Thread-safe; can be called multiple times (e.g. for log rotation).
-void log_init(const char *file_path, Log_level_t level, Log_flags_t flags)
+// Initialise the logger. Thread-safe; may be called multiple times.
+//   file_path: log file path, or NULL for stderr (colour auto-disabled for files).
+//   level:     minimum severity to emit (e.g. LOG_LEVEL_INFO).
+void log_init(const char *file_path, Log_level_t level)
 {
 	// Resolve the new stream and color flag BEFORE taking the lock,
 	// so we hold the write-lock for the shortest possible time.
@@ -158,7 +155,6 @@ void log_init(const char *file_path, Log_level_t level, Log_flags_t flags)
 		g_log_stream = new_stream;
 		g_use_color  = new_color;
 		g_log_level  = level;
-		g_log_flags  = flags;
 	}
 	pthread_mutex_unlock(&g_log_mutex);
 }
@@ -231,23 +227,24 @@ void log_record(Log_level_t level,
 			return;
 		}
 
-		if (g_log_flags & LOG_FLAG_SHOW_TIMESTAMP)
-			log_time_stamp_handler(g_log_stream, g_use_color);
+#ifdef LOG_SHOW_TIME_STAMP
+		log_time_stamp_handler(g_log_stream, g_use_color);
+#endif  // LOG_SHOW_TIME_STAMP
 
 		if (g_use_color)
 			color_log_handler(g_log_stream, level);
 		else
 			default_log_handler(g_log_stream, level);
 
-		if ((g_log_flags & LOG_FLAG_SHOW_SOURCE) && file) {
-			fprintf(g_log_stream,
-			        "%s[%s:%d:%s]%s ",
-			        g_use_color ? COLOR_DIM : "",
-			        file,
-			        line,
-			        func,
-			        g_use_color ? COLOR_RESET : "");
-		}
+#ifdef LOG_SHOW_SOURCE_LOCATION
+		fprintf(g_log_stream,
+		        "%s[%s:%d:%s]%s ",
+		        g_use_color ? COLOR_DIM : "",
+		        file,
+		        line,
+		        func,
+		        g_use_color ? COLOR_RESET : "");
+#endif  // LOG_SHOW_SOURCE_LOCATION
 
 		va_list args;
 		va_start(args, fmt);

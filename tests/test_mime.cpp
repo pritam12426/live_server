@@ -12,8 +12,7 @@ extern "C" {
 struct LogInit {
 	LogInit()
 	{
-		log_init(NULL);
-		log_set_level(LOG_LEVEL_ERROR);
+		log_init(NULL, LOG_LEVEL_ERROR);
 	}
 } log_init_guard;
 

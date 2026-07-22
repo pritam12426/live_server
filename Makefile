@@ -1,18 +1,3 @@
-# Makefile — live-server build system
-#
-# Targets:
-#   all     — release build (-O3)
-#   debug   — debug build (-g3 -DDEBUG)
-#   strip   — strip debug symbols
-#   install — install to PREFIX
-#   uninstall
-#   clean
-#
-# Options (set via environment or on the command line):
-#   make debug -B O_DEBUG=1  — debug build
-#
-# macOS prerequisite: brew install argp-standalone
-
 UNAME_S := $(shell uname -s)
 
 PREFIX ?= /usr/local
@@ -23,42 +8,57 @@ STRIP ?= strip
 PKG_CONFIG ?= pkg-config
 INSTALL ?= install
 
-CFLAGS_OPTIMIZATION ?= -O3
-
 BUILD = build
 BIN   = live-server
 
 HEADERS   = $(wildcard src/*.h)
 SRC       = $(wildcard src/*.c)
 
-# Compiler warnings
-CFLAGS +=  -Wall -Wextra -Wpedantic \
-           -Wstrict-prototypes -Wmissing-prototypes \
-           -Wshadow -Wconversion \
-           -Wno-missing-field-initializers
+CFLAGS += -Isrc -std=c17 -DCOMPILED_TIME_PREFIX='"$(PREFIX)"'
+
+CFLAGS +=  -Wshadow -Wconversion \
+           -Wall -Wextra -Wpedantic \
+           -Wno-missing-field-initializers \
+           -Wstrict-prototypes -Wmissing-prototypes
 
 # Common flags
 CFLAGS += -Isrc -std=c17
-LDLIBS +=  -lpthread
+LDLIBS += -lpthread
 
-# Convert targets to flags for backwards compatibility
-O_DEBUG := 0  # Debug binary (0 = release, 1 = debug)
+# Build options (set via command line, e.g. `make O_DEBUG=1`)
+O_DEBUG := 0                     ## Enable debug build (ASan, UBSan, -g3)
+O_LOG_SHOW_SOURCE_LOCATION := 1  ## Prepend [file:line:func] to log output
+O_LOG_SHOW_TIME_STAMP := 1       ## Prepend [HH:MM:SS.ffffff] to log output
 
+# Auto-enable flags for debug builds
 ifneq ($(filter debug,$(MAKECMDGOALS)),)
 	O_DEBUG := 1
+	O_LOG_SHOW_SOURCE_LOCATION := 1
+	O_LOG_SHOW_TIME_STAMP := 1
 endif
 
 ifeq ($(strip $(O_DEBUG)),1)
-	# Debug build: include symbols, enable DEBUG macro
-	CFLAGS += -g3 -DDEBUG -fstack-usage \
-	          -fsanitize=address -fsanitize=undefined
+	CFLAGS += -g3 -DDEBUG -DLOG_SHOW_SOURCE_LOCATION
+
 	LDFLAGS += -fsanitize=address -fsanitize=undefined
+	CFLAGS += -fstack-usage \
+	          -fsanitize=address \
+	          -fsanitize=undefined
+
     ifneq (,$(findstring clang,$(CC)))
 		CFLAGS += -ffreestanding
     endif
 else
-	# Release build: optimisation only
-	CFLAGS += $(CFLAGS_OPTIMIZATION)
+	CFLAGS += -O3
+endif
+
+# Convert O_ variables to -D flags
+ifeq ($(strip $(O_LOG_SHOW_SOURCE_LOCATION)),1)
+	CFLAGS += -DLOG_SHOW_SOURCE_LOCATION
+endif
+
+ifeq ($(strip $(O_LOG_SHOW_TIME_STAMP)),1)
+	CFLAGS += -DLOG_SHOW_TIME_STAMP
 endif
 
 # Platform-specific settings
@@ -74,40 +74,50 @@ OUT = $(SRC:%.c=$(BUILD)/%.o)
 
 all: $(BIN)
 
-help: ## Show this help
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
-	awk 'BEGIN {FS = ":.*?## "}; {printf "\033[33m%-20s\033[0m %s\n", $$1, $$2}'
+help:  ## Show this help
+	@echo "Variable:"
+	@awk 'BEGIN {FS="  ## "} \
+		/^O_[a-zA-Z_]+[[:space:]]*:=/ { \
+		split($$1, a, /[[:space:]]*:=/); \
+		printf "  \033[36m%-30s\033[0m %s\n", a[1], $$2; \
+	}' $(MAKEFILE_LIST)
 
-$(BUILD): ## Create build directories automatically
+	@echo
+	@echo "Targets:"
+	@grep -hE '^[a-zA-Z_-]+:.*  ## ' $(MAKEFILE_LIST) | \
+	awk 'BEGIN {FS="  ## "}; {printf "  \033[33m%-15s\033[0m %s\n", $$1, $$2}'
+
+$(BUILD):  ## Create build directories automatically
 	mkdir -p $(BUILD)
 
 $(BUILD)/%.o: %.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c $< -o $@
 
-$(BIN): $(OUT) ## Build the live-server binary
+$(BIN): $(OUT)  ## Build the live-server binary
 	$(CC) $(LDFLAGS) -o $@ $(OUT) $(LDLIBS)
 
-debug: $(BIN) ## Build the debug binary run `make debug -B O_DEBUG=1`
+debug:  ## Build the debug binary with `make debug O_DEBUG=1`
+	$(MAKE) $(BIN) O_DEBUG=1
 
-install: all ## Install the live-server binary
+install: all  ## Install the live-server binary
 	$(INSTALL) -m 0755 -d $(DESTDIR)$(BINPREFIX)
 	$(INSTALL) -m 0755 $(BIN) $(DESTDIR)$(BINPREFIX)
 
 	$(INSTALL) -m 0755 -d $(DESTDIR)$(MANPREFIX)
 	$(INSTALL) -m 0755 live-server.1 $(DESTDIR)$(MANPREFIX)
 
-clean: ## Clean up build artifacts
+clean:  ## Clean up build artifacts
 	$(RM) -rf $(OUT) $(BIN)
 
 uninstall: ## Uninstall the live-server binary
 	$(RM) $(DESTDIR)$(BINPREFIX)/$(BIN)
 	$(RM) $(DESTDIR)$(MANPREFIX)/live-server.1
 
-strip: $(BIN) ## Strip the live-server binary
+strip: $(BIN)  ## Strip the live-server binary
 	$(STRIP) $^
 
-test: $(BIN) ## Build and run unit tests (via tests/Makefile)
+test: $(BIN)  ## Build and run unit tests (via tests/Makefile)
 	$(MAKE) -C tests test TEST_LDFLAGS="$(LDFLAGS)"
 
 .PHONY: all install uninstall strip clean debug test
